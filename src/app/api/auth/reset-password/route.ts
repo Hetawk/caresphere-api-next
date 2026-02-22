@@ -1,0 +1,25 @@
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { withErrorHandling } from "@/lib/handler";
+import { successResponse } from "@/lib/responses";
+import { ValidationError } from "@/lib/errors";
+import { resetPasswordWithToken } from "@/services/auth.service";
+
+const schema = z.object({
+  email: z.string().email(),
+  token: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+
+export const POST = withErrorHandling(async (req: NextRequest) => {
+  const body = await req.json();
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) throw new ValidationError(parsed.error.message);
+
+  await resetPasswordWithToken(
+    parsed.data.email,
+    parsed.data.token,
+    parsed.data.newPassword,
+  );
+  return successResponse({ message: "Password reset successfully" });
+});

@@ -1,0 +1,16 @@
+import { NextRequest } from "next/server";
+import { withErrorHandling } from "@/lib/handler";
+import { successResponse } from "@/lib/responses";
+import { getRequestUser } from "@/lib/request";
+import { getMessageAnalytics } from "@/services/message.service";
+
+type RouteParams = { params: Promise<{ id: string }> };
+
+export const GET = withErrorHandling(
+  async (req: NextRequest, ctx: RouteParams) => {
+    const { id } = await ctx.params;
+    await getRequestUser(req);
+    const analytics = await getMessageAnalytics(id);
+    return successResponse(analytics);
+  },
+);
