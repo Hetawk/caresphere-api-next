@@ -2,7 +2,12 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
+import {
+  validate,
+  emailSchema,
+  passwordSchema,
+  verifyCodeSchema,
+} from "@/lib/validate";
 import {
   verifyRegistrationCode,
   completeRegistration,
@@ -10,22 +15,18 @@ import {
 } from "@/services/auth.service";
 
 const schema = z.object({
-  email: z.string().email(),
-  code: z.string().length(6),
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  email: emailSchema,
+  code: verifyCodeSchema,
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  password: passwordSchema,
   phone: z.string().optional(),
 });
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
-  const body = await req.json();
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) throw new ValidationError(parsed.error.message);
-
-  await verifyRegistrationCode(parsed.data.email, parsed.data.code);
-  const user = await completeRegistration(parsed.data);
+  const data = validate(schema, await req.json());
+  await verifyRegistrationCode(data.email, data.code);
+  const user = await completeRegistration(data);
   const tokens = await issueTokens(user);
-
   return successResponse({ user, ...tokens }, { status: 201 });
 });

@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
 import { requireRoles } from "@/lib/request";
 import {
   getFieldConfiguration,
@@ -10,6 +9,7 @@ import {
   deleteFieldConfiguration,
 } from "@/services/field-config.service";
 import { UserRole } from "@prisma/client";
+import { validate } from "@/lib/validate";
 
 const updateSchema = z.object({
   fieldLabel: z.string().optional(),
@@ -38,11 +38,9 @@ export const PUT = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;
     await requireRoles(req, UserRole.SUPER_ADMIN, UserRole.ADMIN);
-    const body = await req.json();
-    const parsed = updateSchema.safeParse(body);
-    if (!parsed.success) throw new ValidationError(parsed.error.message);
+    const data = validate(updateSchema, await req.json());
 
-    const cfg = await updateFieldConfiguration(id, parsed.data);
+    const cfg = await updateFieldConfiguration(id, data);
     return successResponse(cfg);
   },
 );

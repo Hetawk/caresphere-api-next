@@ -17,8 +17,8 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
 import { getRequestUser } from "@/lib/request";
-import { ValidationError } from "@/lib/errors";
 import { getHighlights, createHighlight } from "@/services/bible.service";
+import { validate } from "@/lib/validate";
 
 const createSchema = z.object({
   reference: z.string().min(1),
@@ -36,13 +36,8 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const currentUser = await getRequestUser(req);
-  const body = await req.json();
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success)
-    throw new ValidationError(
-      parsed.error.issues[0]?.message ?? "Invalid data",
-    );
+  const data = validate(createSchema, await req.json());
 
-  const highlight = await createHighlight(currentUser.id, parsed.data);
+  const highlight = await createHighlight(currentUser.id, data);
   return successResponse(highlight);
 });

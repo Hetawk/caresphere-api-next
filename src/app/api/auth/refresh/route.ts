@@ -1,20 +1,19 @@
 import { NextRequest } from "next/server";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { AuthenticationError, ValidationError } from "@/lib/errors";
+import { AuthenticationError } from "@/lib/errors";
 import { verifyToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { issueTokens } from "@/services/auth.service";
 import { z } from "zod";
+import { validate } from "@/lib/validate";
 
 const schema = z.object({ refreshToken: z.string().min(1) });
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
-  const body = await req.json();
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) throw new ValidationError(parsed.error.message);
+  const { refreshToken } = validate(schema, await req.json());
 
-  const payload = verifyToken(parsed.data.refreshToken);
+  const payload = verifyToken(refreshToken);
   if (payload.type !== "refresh")
     throw new AuthenticationError("Invalid refresh token");
 

@@ -14,8 +14,8 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
 import { getRequestUser } from "@/lib/request";
-import { ValidationError } from "@/lib/errors";
 import { updateNote, deleteNote } from "@/services/bible.service";
+import { validate } from "@/lib/validate";
 
 const updateSchema = z
   .object({
@@ -30,14 +30,9 @@ export const PUT = withErrorHandling(
   async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const currentUser = await getRequestUser(req);
     const { id } = await params;
-    const body = await req.json();
-    const parsed = updateSchema.safeParse(body);
-    if (!parsed.success)
-      throw new ValidationError(
-        parsed.error.issues[0]?.message ?? "Invalid data",
-      );
+    const data = validate(updateSchema, await req.json());
 
-    const note = await updateNote(currentUser.id, id, parsed.data);
+    const note = await updateNote(currentUser.id, id, data);
     return successResponse(note);
   },
 );

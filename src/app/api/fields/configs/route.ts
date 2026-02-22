@@ -9,6 +9,7 @@ import {
   createFieldConfiguration,
 } from "@/services/field-config.service";
 import { EntityType, FieldType, UserRole } from "@prisma/client";
+import { validate } from "@/lib/validate";
 
 const createSchema = z.object({
   fieldKey: z.string().min(1),
@@ -21,6 +22,7 @@ const createSchema = z.object({
   displayOrder: z.number().int().optional(),
   description: z.string().optional(),
   placeholder: z.string().optional(),
+  organizationId: z.string().uuid().optional(),
 });
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
@@ -38,15 +40,13 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     UserRole.SUPER_ADMIN,
     UserRole.ADMIN,
   );
-  const body = await req.json();
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) throw new ValidationError(parsed.error.message);
+  const data = validate(createSchema, await req.json());
 
-  const organizationId = currentUser.organizationId ?? body.organizationId;
+  const organizationId = currentUser.organizationId ?? data.organizationId;
   if (!organizationId) throw new ValidationError("organizationId is required");
 
   const config = await createFieldConfiguration({
-    ...parsed.data,
+    ...data,
     organizationId,
   });
   return successResponse(config, { status: 201 });

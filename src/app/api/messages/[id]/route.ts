@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
+import { validate } from "@/lib/validate";
 import { getRequestUser } from "@/lib/request";
 import {
   getMessage,
@@ -38,11 +38,9 @@ export const PUT = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;
     await getRequestUser(req);
-    const body = await req.json();
-    const parsed = updateSchema.safeParse(body);
-    if (!parsed.success) throw new ValidationError(parsed.error.message);
+    const body = validate(updateSchema, await req.json());
 
-    const message = await updateMessage(id, parsed.data);
+    const message = await updateMessage(id, body);
     return successResponse(message);
   },
 );

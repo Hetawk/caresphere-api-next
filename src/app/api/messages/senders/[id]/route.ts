@@ -2,12 +2,12 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
 import { getRequestUser } from "@/lib/request";
 import {
   updateSenderProfile,
   deleteSenderProfile,
 } from "@/services/message.service";
+import { validate } from "@/lib/validate";
 
 const updateSchema = z.object({
   name: z.string().optional(),
@@ -22,11 +22,9 @@ export const PUT = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;
     await getRequestUser(req);
-    const body = await req.json();
-    const parsed = updateSchema.safeParse(body);
-    if (!parsed.success) throw new ValidationError(parsed.error.message);
+    const data = validate(updateSchema, await req.json());
 
-    const profile = await updateSenderProfile(id, parsed.data);
+    const profile = await updateSenderProfile(id, data);
     return successResponse(profile);
   },
 );

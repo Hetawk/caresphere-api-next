@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
+import { validate } from "@/lib/validate";
 import { getRequestUser } from "@/lib/request";
 import { parsePaginationParams, paginationMeta } from "@/lib/pagination";
 import { listTemplates, createTemplate } from "@/services/template.service";
@@ -31,15 +31,14 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     search,
   });
 
-  return successResponse(items, { metadata: paginationMeta(total, page, limit) });
+  return successResponse(items, {
+    metadata: paginationMeta(total, page, limit),
+  });
 });
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const currentUser = await getRequestUser(req);
-  const body = await req.json();
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) throw new ValidationError(parsed.error.message);
-
-  const template = await createTemplate(parsed.data, currentUser.id);
+  const body = validate(createSchema, await req.json());
+  const template = await createTemplate(body, currentUser.id);
   return successResponse(template, { status: 201 });
 });

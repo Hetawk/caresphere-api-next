@@ -2,9 +2,9 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
 import { getRequestUser } from "@/lib/request";
 import { listActivities, logActivity } from "@/services/member.service";
+import { validate } from "@/lib/validate";
 
 const createSchema = z.object({
   activityType: z.string().min(1),
@@ -26,13 +26,11 @@ export const POST = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;
     const currentUser = await getRequestUser(req);
-    const body = await req.json();
-    const parsed = createSchema.safeParse(body);
-    if (!parsed.success) throw new ValidationError(parsed.error.message);
+    const data = validate(createSchema, await req.json());
 
-    const activity = await logActivity(id, parsed.data.activityType, {
-      description: parsed.data.description,
-      metadata: parsed.data.metadata as Record<string, unknown> | undefined,
+    const activity = await logActivity(id, data.activityType, {
+      description: data.description,
+      metadata: data.metadata as Record<string, unknown> | undefined,
       performedBy: currentUser.id,
     });
     return successResponse(activity, { status: 201 });

@@ -2,9 +2,12 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
+import { validate } from "@/lib/validate";
 import { getRequestUser } from "@/lib/request";
-import { listSenderProfiles, createSenderProfile } from "@/services/message.service";
+import {
+  listSenderProfiles,
+  createSenderProfile,
+} from "@/services/message.service";
 import { getUserOrganization } from "@/services/organization.service";
 
 const createSchema = z.object({
@@ -24,10 +27,10 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const currentUser = await getRequestUser(req);
   const org = await getUserOrganization(currentUser.id);
-  const body = await req.json();
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) throw new ValidationError(parsed.error.message);
-
-  const profile = await createSenderProfile(parsed.data, currentUser.id, org?.id);
+  const profile = await createSenderProfile(
+    validate(createSchema, await req.json()),
+    currentUser.id,
+    org?.id,
+  );
   return successResponse(profile, { status: 201 });
 });

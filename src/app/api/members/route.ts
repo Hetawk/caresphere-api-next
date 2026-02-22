@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
+import { validate } from "@/lib/validate";
 import { getRequestUser } from "@/lib/request";
 import { parsePaginationParams, paginationMeta } from "@/lib/pagination";
 import { listMembers, createMember } from "@/services/member.service";
@@ -62,10 +62,9 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const currentUser = await getRequestUser(req);
   const org = await getUserOrganization(currentUser.id);
-  const body = await req.json();
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) throw new ValidationError(parsed.error.message);
-
-  const member = await createMember(parsed.data, org?.id);
+  const member = await createMember(
+    validate(createSchema, await req.json()),
+    org?.id,
+  );
   return successResponse(member, { status: 201 });
 });

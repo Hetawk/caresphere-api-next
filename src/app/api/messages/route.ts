@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/handler";
 import { successResponse } from "@/lib/responses";
-import { ValidationError } from "@/lib/errors";
+import { validate } from "@/lib/validate";
 import { getRequestUser } from "@/lib/request";
 import { parsePaginationParams, paginationMeta } from "@/lib/pagination";
 import { listMessages, createMessage } from "@/services/message.service";
@@ -35,15 +35,16 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     type: type ?? undefined,
   });
 
-  return successResponse(items, { metadata: paginationMeta(total, page, limit) });
+  return successResponse(items, {
+    metadata: paginationMeta(total, page, limit),
+  });
 });
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const currentUser = await getRequestUser(req);
-  const body = await req.json();
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) throw new ValidationError(parsed.error.message);
-
-  const message = await createMessage(parsed.data, currentUser.id);
+  const message = await createMessage(
+    validate(createSchema, await req.json()),
+    currentUser.id,
+  );
   return successResponse(message, { status: 201 });
 });
