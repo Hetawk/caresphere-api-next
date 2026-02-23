@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   PlusCircle,
   Mail,
@@ -16,6 +16,13 @@ import {
   UserCheck,
   UserX,
   FileText,
+  Search,
+  Upload,
+  X as XIcon,
+  FileSpreadsheet,
+  User,
+  LayoutTemplate,
+  ChevronDown,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useApi } from "@/hooks/use-api";
@@ -65,6 +72,27 @@ const RECIPIENT_GROUPS = [
   { id: "INACTIVE", label: "Inactive Members", icon: UserX },
 ] as const;
 type RecipientGroup = (typeof RECIPIENT_GROUPS)[number]["id"];
+type RecipientMode = "group" | "specific" | "csv";
+
+// ─── Additional types ────────────────────────────────────────────────────────
+type OrgTemplate = {
+  id: string;
+  name: string;
+  subject?: string | null;
+  body?: string | null;
+  content?: string | null;
+  isSystemTemplate?: boolean;
+  organizationId?: string | null;
+};
+type MemberHit = {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+};
+type CsvContact = { name?: string; email?: string; phone?: string };
 
 type StatusTab = "ALL" | "SENT" | "SCHEDULED" | "DRAFT" | "FAILED";
 const STATUS_TABS: { id: StatusTab; label: string }[] = [
@@ -108,13 +136,120 @@ const DEFAULT_FORM = {
 };
 
 export default function MessagesPage() {
-  const [statusTab, setStatusTab] = useState<StatusTab>("ALL");
-  const [page, setPage] = useState(1);
-  const [showCompose, setShowCompose] = useState(false);
-  const [form, setForm] = useState(DEFAULT_FORM);
-  const [sending, setSending] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const { toasts, toast, remove } = useToast();
+  const [statusTab,  setStatusTab]  = useState<StatusTab>("ALL");
+  const [page,       setPage]       = useState(1);
+  const [showCompose,setShowCompose]= useState(false);
+  const [form,       setForm]       = useState(DEFAULT_FORM);
+  const [sending,    setSending]    = useState(false);
+  const [step,       setStep]       = useState<1 | 2 | 3>(1);
+  const { toasts, toast, remove }   = useToast();
+
+  // ── New: recipient mode & member search
+  const [recipientMode,  setRecipientMode]  = useState<RecipientMode>("group");
+  const [selectedMembers,setSelectedMembers]= useState<MemberHit[]>([]);
+  const [memberQuery,    setMemberQuery]    = useState("");
+  const [memberResults,  setMemberResults]  = useState<MemberHit[]>([]);
+  const [searchingMem,   setSearchingMem]   = useState(false);
+  const [showMemDrop,    setShowMemDrop]    = useState(false);
+  const memberTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const memberInputRef = useRef<HTMLInputElement>(null);
+
+  // ── New: CSV / Excel upload
+  const [csvContacts, setCsvContacts] = useState<CsvContact[]>([]);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvError,    setCsvError]    = useState<string | null>(null);
+  const fileInputRef  = useRef<HTMLInputElement>(null);
+
+  // ── New: template picker
+  const [showTplPicker, setShowTplPicker] = useState(false);
+  const [orgTemplates,  setOrgTemplates]  = useState<OrgTemplate[]>([]);
+  const [tplLoading,    setTplLoading]    = useState(false);
+
+  // ── Template fetch (on picker open) ──────────────────────────────────────
+  useEffect(() => {
+    if (!showTplPicker || orgTemplates.length > 0) return;
+    setTplLoading(true);
+    api.get<{ items?: OrgTemplate[] } | OrgTemplate[]>("/templates").then((res) => {
+      setTplLoading(false);
+      if (res.error) return;
+      const raw = res.data;
+      const items: OrgTemplate[] = Array.isArray(raw)
+        ? (raw as OrgTemplate[])
+        : ((raw as { items?: OrgTemplate[] })?.items ?? []);
+      setOrgTemplates(items);
+    });
+  }, [showTplPicker, orgTemplates.length]);
+
+  // ── Member search (debounced) ─────────────────────────────────────────────
+  useEffect(() => {
+    if (memberQuery.trim().length < 2) {
+      setMemberResults([]);
+      setShowMemDrop(false);
+      return;
+    }
+    if (memberTimerRef.current) clearTimeout(memberTimerRef.current);
+    memberTimerRef.current = setTimeout(async () => {
+      setSearchingMem(true);
+      const res = await api.get<{ items?: MemberHit[] } | MemberHit[]>(
+        `/members?search=${encodeURIComponent(memberQuery.trim())}&limit=10`,
+      );
+      setSearchingMem(false);
+      if (!res.error) {
+        const raw = res.data;
+        const list: MemberHit[] = Array.isArray(raw)
+          ? (raw as MemberHit[])
+          : ((raw as { items?: MemberHit[] })?.items ?? []);
+        setMemberResults(list.filter((m) => !selectedMembers.find((s) => s.id === m.id)));
+        setShowMemDrop(true);
+      }
+    }, 350);
+  }, [memberQuery, selectedMembers]);
+
+  // ── CSV / Excel parser ────────────────────────────────────────────────────
+  const handleFile = useCallback(async (file: File) => {
+    setCsvError(null);
+    setCsvContacts([]);
+    setCsvFileName(file.name);
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext === "csv") {
+      const Papa = (await import("papaparse")).default;
+      Papa.parse<Record<string, string>>(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const contacts: CsvContact[] = results.data.map((row) => {
+            const keys = Object.keys(row).map((k) => k.toLowerCase());
+            const get = (terms: string[]) => {
+              const k = keys.find((k) => terms.some((t) => k.includes(t)));
+              return k ? row[Object.keys(row)[keys.indexOf(k)]]?.trim() || undefined : undefined;
+            };
+            return { name: get(["name","full"]), email: get(["email","e-mail","mail"]), phone: get(["phone","mobile","tel","cell"]) };
+          }).filter((c) => c.email || c.phone);
+          if (!contacts.length) setCsvError("No valid contacts found. Ensure the file has email or phone columns.");
+          setCsvContacts(contacts);
+        },
+        error: () => setCsvError("Failed to parse CSV file."),
+      });
+    } else if (ext === "xlsx" || ext === "xls") {
+      const XLSX = await import("xlsx");
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: "array" });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: "" });
+      const contacts: CsvContact[] = rows.map((row) => {
+        const keys = Object.keys(row).map((k) => k.toLowerCase());
+        const get = (terms: string[]) => {
+          const k = keys.find((k) => terms.some((t) => k.includes(t)));
+          return k ? String(row[Object.keys(row)[keys.indexOf(k)]])?.trim() || undefined : undefined;
+        };
+        return { name: get(["name","full"]), email: get(["email","e-mail","mail"]), phone: get(["phone","mobile","tel","cell"]) };
+      }).filter((c) => c.email || c.phone);
+      if (!contacts.length) setCsvError("No valid contacts found. Ensure the sheet has email or phone columns.");
+      setCsvContacts(contacts);
+    } else {
+      setCsvError("Unsupported file type. Please upload a .csv, .xlsx or .xls file.");
+    }
+  }, []);
 
   const statusParam = statusTab !== "ALL" ? `&status=${statusTab}` : "";
   const { data, loading, error, refetch } = useApi<PaginatedResponse<Message>>(
@@ -132,9 +267,46 @@ export default function MessagesPage() {
     ) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // ── Member helpers ────────────────────────────────────────────────────────
+  const memberLabel = (m: MemberHit) =>
+    m.name ??
+    ([m.firstName, m.lastName].filter(Boolean).join(" ") ||
+      m.email ||
+      m.phone ||
+      m.id);
+  const addMember = (m: MemberHit) => {
+    setSelectedMembers((s) => [...s, m]);
+    setMemberQuery(""); setMemberResults([]); setShowMemDrop(false);
+    memberInputRef.current?.focus();
+  };
+  const removeMember = (id: string) => setSelectedMembers((s) => s.filter((m) => m.id !== id));
+
+  // ── Template helpers ──────────────────────────────────────────────────────
+  const applyTemplate = (t: OrgTemplate) => {
+    setForm((f) => ({ ...f, subject: t.subject ?? f.subject, body: t.body ?? t.content ?? f.body }));
+    setShowTplPicker(false);
+  };
+
+  // ── Recipient summary for Step 3 review ──────────────────────────────────
+  const recipientSummary = () => {
+    if (recipientMode === "specific")
+      return `${selectedMembers.length} specific member${selectedMembers.length === 1 ? "" : "s"}`;
+    if (recipientMode === "csv")
+      return `${csvContacts.length} contact${csvContacts.length === 1 ? "" : "s"} from file`;
+    return RECIPIENT_GROUPS.find((r) => r.id === form.recipientGroup)?.label ?? "All Members";
+  };
+
   const handleSend = useCallback(async () => {
     if (!form.subject.trim() || !form.body.trim()) {
       toast.error("Subject and body are required.");
+      return;
+    }
+    if (recipientMode === "specific" && selectedMembers.length === 0) {
+      toast.error("Select at least one member.");
+      return;
+    }
+    if (recipientMode === "csv" && csvContacts.length === 0) {
+      toast.error("Upload a CSV/Excel file with at least one contact.");
       return;
     }
     if (form.scheduleEnabled && !form.scheduledFor) {
@@ -144,25 +316,27 @@ export default function MessagesPage() {
     setSending(true);
     const ch = CHANNELS.find((c) => c.id === form.channel)!;
     const payload: Record<string, unknown> = {
-      title: form.subject,
-      content: form.body,
-      messageType: form.channel,
+      title:        form.subject,
+      content:      form.body,
+      messageType:  form.channel,
       channelLabel: ch.label,
-      recipientGroup: form.recipientGroup,
       ...(form.scheduleEnabled && form.scheduledFor
         ? { scheduledFor: new Date(form.scheduledFor).toISOString() }
         : {}),
       ...(form.senderName ? { senderName: form.senderName } : {}),
-      ...(form.channel === "EMAIL" && form.senderEmail
-        ? { senderEmail: form.senderEmail }
-        : {}),
-      ...(form.channel === "SMS" && form.senderPhone
-        ? { senderPhone: form.senderPhone }
-        : {}),
-      ...(form.channel === "PUSH" && form.senderWhatsapp
-        ? { senderWhatsapp: form.senderWhatsapp }
-        : {}),
+      ...(form.channel === "EMAIL" && form.senderEmail ? { senderEmail: form.senderEmail } : {}),
+      ...(form.channel === "SMS"   && form.senderPhone ? { senderPhone: form.senderPhone } : {}),
+      ...(form.channel === "PUSH"  && form.senderWhatsapp ? { senderWhatsapp: form.senderWhatsapp } : {}),
     };
+    if (recipientMode === "group") {
+      payload.recipientGroup = form.recipientGroup;
+    } else if (recipientMode === "specific") {
+      payload.recipientMemberIds = selectedMembers.map((m) => m.id);
+    } else {
+      // csv — pass emails as recipientEmails; add fallback recipientGroup
+      payload.recipientEmails = csvContacts.map((c) => c.email).filter(Boolean);
+      payload.recipientGroup  = "ALL";
+    }
     const res = await api.post(
       form.scheduleEnabled ? "/messages" : "/messages/send",
       payload,
@@ -176,21 +350,25 @@ export default function MessagesPage() {
       form.scheduleEnabled ? "Message scheduled." : "Message sent.",
     );
     setShowCompose(false);
-    setForm(DEFAULT_FORM);
-    setStep(1);
+    resetCompose();
     refetch();
-  }, [form, toast, refetch]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, recipientMode, selectedMembers, csvContacts, toast, refetch]);
 
-  const openCompose = () => {
+  const resetCompose = () => {
     setForm(DEFAULT_FORM);
     setStep(1);
-    setShowCompose(true);
+    setRecipientMode("group");
+    setSelectedMembers([]);
+    setMemberQuery("");
+    setCsvContacts([]);
+    setCsvFileName(null);
+    setCsvError(null);
+    setShowTplPicker(false);
+    setOrgTemplates([]);
   };
-  const closeCompose = () => {
-    setShowCompose(false);
-    setForm(DEFAULT_FORM);
-    setStep(1);
-  };
+  const openCompose  = () => { resetCompose(); setShowCompose(true); };
+  const closeCompose = () => { setShowCompose(false); resetCompose(); };
   const selCh = CHANNELS.find((c) => c.id === form.channel)!;
   const SelIcon = selCh.icon;
 
@@ -361,7 +539,7 @@ export default function MessagesPage() {
                 onClick={closeCompose}
                 className="rounded-lg p-1.5 text-[rgba(26,26,26,0.4)] hover:bg-[#E3D4C2]"
               >
-                ✕
+                <XIcon className="h-4 w-4" />
               </button>
             </div>
             {/* Progress */}
@@ -500,36 +678,206 @@ export default function MessagesPage() {
                       />
                     </div>
                   )}
+                  {/* ── Recipients ─────────────────────────────────────────── */}
                   <div>
-                    <label className="mb-2 block text-xs font-medium text-[rgba(26,26,26,0.6)]">
-                      Recipients
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {RECIPIENT_GROUPS.map((rg) => {
-                        const Icon = rg.icon;
-                        const sel = form.recipientGroup === rg.id;
+                    <label className="mb-2 block text-xs font-medium text-[rgba(26,26,26,0.6)]">Recipients</label>
+
+                    {/* Mode tabs */}
+                    <div className="mb-3 flex overflow-hidden rounded-xl border border-[#E3D4C2]">
+                      {(["group","specific","csv"] as RecipientMode[]).map((mode) => {
+                        const labels: Record<RecipientMode, string> = { group: "Member Group", specific: "Specific Members", csv: "Upload File" };
+                        const icons: Record<RecipientMode, React.ReactNode> = {
+                          group:    <Users           className="h-3.5 w-3.5" />,
+                          specific: <User            className="h-3.5 w-3.5" />,
+                          csv:      <FileSpreadsheet className="h-3.5 w-3.5" />,
+                        };
+                        const active = recipientMode === mode;
                         return (
-                          <button
-                            key={rg.id}
-                            type="button"
-                            onClick={() =>
-                              setForm((f) => ({ ...f, recipientGroup: rg.id }))
-                            }
-                            className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 px-2 text-center transition-all text-xs ${
-                              sel
-                                ? "border-[#C8A061] bg-[rgba(200,160,97,0.1)] font-semibold text-[#1F1C18]"
-                                : "border-[#E3D4C2] text-[rgba(26,26,26,0.55)] hover:border-[#C8A061]/50"
-                            }`}
-                          >
-                            <Icon
-                              className={`h-4 w-4 ${sel ? "text-[#C8A061]" : ""}`}
-                            />
-                            {rg.label}
+                          <button key={mode} type="button" onClick={() => setRecipientMode(mode)}
+                            className={`flex flex-1 items-center justify-center gap-1.5 border-r py-2 text-[11px] font-medium last:border-r-0 border-[#E3D4C2] transition-colors ${
+                              active ? "bg-[#1F1C18] text-white" : "bg-white text-[rgba(26,26,26,0.55)] hover:bg-[#FAF7F3]"
+                            }`}>
+                            {icons[mode]}{labels[mode]}
                           </button>
                         );
                       })}
                     </div>
+
+                    {/* group mode */}
+                    {recipientMode === "group" && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {RECIPIENT_GROUPS.map((rg) => {
+                          const Icon = rg.icon;
+                          const sel  = form.recipientGroup === rg.id;
+                          return (
+                            <button key={rg.id} type="button"
+                              onClick={() => setForm((f) => ({ ...f, recipientGroup: rg.id }))}
+                              className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 px-2 text-center transition-all text-xs ${
+                                sel
+                                  ? "border-[#C8A061] bg-[rgba(200,160,97,0.1)] font-semibold text-[#1F1C18]"
+                                  : "border-[#E3D4C2] text-[rgba(26,26,26,0.55)] hover:border-[#C8A061]/50"
+                              }`}>
+                              <Icon className={`h-4 w-4 ${sel ? "text-[#C8A061]" : ""}`} />
+                              {rg.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* specific member mode */}
+                    {recipientMode === "specific" && (
+                      <div className="space-y-2">
+                        {selectedMembers.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedMembers.map((m) => (
+                              <span key={m.id} className="flex items-center gap-1 rounded-full border border-[#C8A061]/30 bg-[rgba(200,160,97,0.12)] px-2.5 py-1 text-xs text-[#1F1C18]">
+                                {memberLabel(m)}
+                                <button type="button" onClick={() => removeMember(m.id)} className="ml-0.5 text-[rgba(26,26,26,0.4)] hover:text-[#8E0E00]">
+                                  <XIcon className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[rgba(26,26,26,0.35)]" />
+                          <input ref={memberInputRef} className="cs-input w-full pl-8"
+                            placeholder="Search by name or email…"
+                            value={memberQuery}
+                            onChange={(e) => setMemberQuery(e.target.value)}
+                            onFocus={() => memberResults.length > 0 && setShowMemDrop(true)}
+                            onBlur={() => setTimeout(() => setShowMemDrop(false), 200)}
+                          />
+                          {searchingMem && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C8A061]" />}
+                          {showMemDrop && memberResults.length > 0 && (
+                            <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-[#E3D4C2] bg-white shadow-lg">
+                              {memberResults.map((m) => (
+                                <button key={m.id} type="button" onMouseDown={() => addMember(m)}
+                                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-[#FAF7F3]">
+                                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F0E8DA] text-xs font-bold text-[#C8A061]">
+                                    {(m.firstName?.[0] ?? m.name?.[0] ?? "?").toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium leading-none text-[#1F1C18]">{memberLabel(m)}</p>
+                                    {m.email && <p className="mt-0.5 text-[11px] text-[rgba(26,26,26,0.45)]">{m.email}</p>}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {showMemDrop && !memberResults.length && memberQuery.trim().length >= 2 && !searchingMem && (
+                            <div className="absolute z-20 mt-1 w-full rounded-xl border border-[#E3D4C2] bg-white px-4 py-3 text-sm text-[rgba(26,26,26,0.5)] shadow-lg">
+                              No members found matching &ldquo;{memberQuery}&rdquo;
+                            </div>
+                          )}
+                        </div>
+                        {!selectedMembers.length && (
+                          <p className="text-[11px] text-[rgba(26,26,26,0.4)]">Type at least 2 characters to search…</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* CSV / Excel upload mode */}
+                    {recipientMode === "csv" && (
+                      <div className="space-y-3">
+                        <div
+                          onClick={() => fileInputRef.current?.click()}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+                          className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-[#C8A061]/40 bg-[rgba(200,160,97,0.04)] px-4 py-6 text-center transition-colors hover:border-[#C8A061] hover:bg-[rgba(200,160,97,0.08)]"
+                        >
+                          <Upload className="h-8 w-8 text-[#C8A061]" />
+                          <div>
+                            <p className="text-sm font-medium text-[#1F1C18]">
+                              {csvFileName ?? "Click or drag & drop a file here"}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-[rgba(26,26,26,0.45)]">Supports .csv, .xlsx, .xls</p>
+                          </div>
+                          {csvFileName && csvContacts.length > 0 && (
+                            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                              {csvContacts.length} contact{csvContacts.length === 1 ? "" : "s"} ready
+                            </span>
+                          )}
+                        </div>
+                        <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                        {csvError && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-[#8E0E00]">{csvError}</p>}
+                        {csvContacts.length > 0 && (
+                          <div className="overflow-hidden rounded-xl border border-[#E3D4C2]">
+                            <div className="flex gap-4 bg-[#FAF7F3] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-[rgba(26,26,26,0.5)]">
+                              <span className="w-28">Name</span><span className="flex-1">Email</span><span className="w-24">Phone</span>
+                            </div>
+                            <div className="max-h-36 divide-y divide-[#E3D4C2] overflow-y-auto">
+                              {csvContacts.slice(0, 50).map((c, i) => (
+                                <div key={i} className="flex gap-4 px-3 py-1.5 text-xs hover:bg-[rgba(212,175,106,0.04)]">
+                                  <span className="w-28 truncate text-[rgba(26,26,26,0.7)]">{c.name ?? "—"}</span>
+                                  <span className="flex-1 truncate text-[#1F1C18]">{c.email ?? "—"}</span>
+                                  <span className="w-24 truncate text-[rgba(26,26,26,0.7)]">{c.phone ?? "—"}</span>
+                                </div>
+                              ))}
+                              {csvContacts.length > 50 && (
+                                <p className="px-3 py-1.5 text-xs text-[rgba(26,26,26,0.4)]">…and {csvContacts.length - 50} more</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <p className="text-[11px] text-[rgba(26,26,26,0.45)]">
+                          Tip: include columns named{" "}
+                          <code className="rounded bg-[#F0E8DA] px-1">name</code>,{" "}
+                          <code className="rounded bg-[#F0E8DA] px-1">email</code> and{" "}
+                          <code className="rounded bg-[#F0E8DA] px-1">phone</code> in any order.
+                        </p>
+                      </div>
+                    )}
                   </div>
+
+                  {/* ── Template picker ─────────────────────────────────────── */}
+                  <div>
+                    <button type="button" onClick={() => setShowTplPicker((v) => !v)}
+                      className="flex w-full items-center justify-between rounded-xl border border-dashed border-[#C8A061]/40 bg-[rgba(200,160,97,0.04)] px-4 py-3 text-left transition-colors hover:border-[#C8A061] hover:bg-[rgba(200,160,97,0.08)]">
+                      <div className="flex items-center gap-2.5">
+                        <LayoutTemplate className="h-4 w-4 text-[#C8A061]" />
+                        <div>
+                          <p className="text-sm font-medium text-[#1F1C18]">Load from template</p>
+                          <p className="text-[11px] text-[rgba(26,26,26,0.45)]">Auto-fill subject &amp; body from a saved template</p>
+                        </div>
+                      </div>
+                      <ChevronDown className={`h-4 w-4 text-[rgba(26,26,26,0.35)] transition-transform ${showTplPicker ? "rotate-180" : ""}`} />
+                    </button>
+                    {showTplPicker && (
+                      <div className="mt-2 overflow-hidden rounded-xl border border-[#E3D4C2]">
+                        {tplLoading ? (
+                          <div className="flex h-20 items-center justify-center"><Spinner size="sm" className="text-[#C8A061]" /></div>
+                        ) : orgTemplates.length === 0 ? (
+                          <p className="px-4 py-4 text-sm text-[rgba(26,26,26,0.45)]">No templates saved yet.</p>
+                        ) : (
+                          <div className="max-h-48 divide-y divide-[#E3D4C2] overflow-y-auto">
+                            {orgTemplates.map((t) => (
+                              <button key={t.id} type="button" onClick={() => applyTemplate(t)}
+                                className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[#FAF7F3]">
+                                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[#C8A061]" />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="truncate text-sm font-medium text-[#1F1C18]">{t.name}</p>
+                                    {t.isSystemTemplate && !t.organizationId && (
+                                      <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Platform</span>
+                                    )}
+                                    {t.organizationId && (
+                                      <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">Yours</span>
+                                    )}
+                                  </div>
+                                  {t.subject && <p className="mt-0.5 truncate text-[11px] text-[rgba(26,26,26,0.45)]">{t.subject}</p>}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Subject ─────────────────────────────────────────────── */}
                   <div>
                     <label className="mb-1 block text-xs font-medium text-[rgba(26,26,26,0.6)]">
                       {form.channel === "EMAIL" ? "Subject *" : "Title *"}
@@ -586,12 +934,7 @@ export default function MessagesPage() {
                         style={{ color: selCh.color }}
                       />
                       <span className="text-xs font-semibold uppercase tracking-wider text-[rgba(26,26,26,0.55)]">
-                        {selCh.label} ·{" "}
-                        {
-                          RECIPIENT_GROUPS.find(
-                            (r) => r.id === form.recipientGroup,
-                          )?.label
-                        }
+                        {selCh.label} · {recipientSummary()}
                       </span>
                     </div>
                     <p className="font-semibold text-[#1F1C18]">
@@ -606,6 +949,28 @@ export default function MessagesPage() {
                         <em className="text-[rgba(26,26,26,0.4)]">(no body)</em>
                       )}
                     </p>
+                    {recipientMode === "specific" && selectedMembers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {selectedMembers.slice(0, 6).map((m) => (
+                          <span key={m.id} className="rounded-full bg-[rgba(200,160,97,0.15)] px-2 py-0.5 text-[10px] text-[#1F1C18]">
+                            {memberLabel(m)}
+                          </span>
+                        ))}
+                        {selectedMembers.length > 6 && (
+                          <span className="rounded-full bg-[rgba(200,160,97,0.15)] px-2 py-0.5 text-[10px] text-[rgba(26,26,26,0.5)]">
+                            +{selectedMembers.length - 6} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {recipientMode === "csv" && csvFileName && (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-[#C8A061]" />
+                        <span className="text-xs text-[rgba(26,26,26,0.55)]">
+                          {csvFileName} — {csvContacts.length} contacts
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3">
@@ -703,6 +1068,14 @@ export default function MessagesPage() {
                       (!form.subject.trim() || !form.body.trim())
                     ) {
                       toast.error("Subject and body are required.");
+                      return;
+                    }
+                    if (step === 2 && recipientMode === "specific" && selectedMembers.length === 0) {
+                      toast.error("Select at least one member.");
+                      return;
+                    }
+                    if (step === 2 && recipientMode === "csv" && csvContacts.length === 0) {
+                      toast.error("Upload a file with at least one contact.");
                       return;
                     }
                     setStep((s) => (s + 1) as 2 | 3);

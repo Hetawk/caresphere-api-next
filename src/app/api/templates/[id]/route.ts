@@ -34,28 +34,44 @@ export const GET = withErrorHandling(
 export const PUT = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;
-    await getRequestUser(req);
+    const currentUser = await getRequestUser(req);
     const body = validate(updateSchema, await req.json());
-    const template = await updateTemplate(id, body);
-    return successResponse(template);
+    const { template, forked } = await updateTemplate(id, body, {
+      userId: currentUser.id,
+      organizationId: currentUser.organizationId ?? undefined,
+    });
+    // If the system template was forked, return 201 with the new org-copy
+    return successResponse(
+      { ...template, _forked: forked },
+      { status: forked ? 201 : 200 },
+    );
   },
 );
 
 export const PATCH = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;
-    await getRequestUser(req);
+    const currentUser = await getRequestUser(req);
     const body = validate(updateSchema, await req.json());
-    const template = await updateTemplate(id, body);
-    return successResponse(template);
+    const { template, forked } = await updateTemplate(id, body, {
+      userId: currentUser.id,
+      organizationId: currentUser.organizationId ?? undefined,
+    });
+    // If forked: 201 with new ID so the client can update its local state
+    return successResponse(
+      { ...template, _forked: forked },
+      { status: forked ? 201 : 200 },
+    );
   },
 );
 
 export const DELETE = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;
-    await getRequestUser(req);
-    await deleteTemplate(id);
+    const currentUser = await getRequestUser(req);
+    await deleteTemplate(id, {
+      organizationId: currentUser.organizationId ?? undefined,
+    });
     return successResponse({ message: "Template deleted" });
   },
 );

@@ -23,6 +23,7 @@ const schema = z.object({
   templateId: z.string().uuid().optional(),
   senderProfileId: z.string().uuid().optional(),
   recipientMemberIds: z.array(z.string().uuid()).optional(),
+  recipientEmails: z.array(z.string().email()).optional(),
 });
 
 export const POST = withErrorHandling(async (req: NextRequest) => {

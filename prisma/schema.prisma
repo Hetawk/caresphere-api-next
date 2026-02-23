@@ -190,6 +190,7 @@ model Organization {
   senderSettings  SenderSetting[]
   bibleVerseOfDay BibleVerseOfDay[]
   bibleHighlights BibleHighlight[]
+  templates       Template[]           @relation("OrgTemplates")
 
   @@map("organizations")
 }
@@ -338,24 +339,28 @@ model MemberActivity {
 }
 
 model Template {
-  id           String       @id @default(uuid())
-  name         String
-  description  String?
-  templateType TemplateType @default(EMAIL) @map("template_type")
-  category     String?
-  subject      String?
-  content      String       @db.Text
-  variables    String?
-  thumbnailUrl String?      @map("thumbnail_url")
-  isActive     Boolean      @default(true) @map("is_active")
-  usageCount   Int          @default(0) @map("usage_count")
-  createdBy    String       @map("created_by")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
+  id               String       @id @default(uuid())
+  name             String
+  description      String?
+  templateType     TemplateType @default(EMAIL) @map("template_type")
+  category         String?
+  subject          String?
+  content          String       @db.Text
+  variables        String?
+  thumbnailUrl     String?      @map("thumbnail_url")
+  isActive         Boolean      @default(true) @map("is_active")
+  isSystemTemplate Boolean      @default(false) @map("is_system_template")
+  usageCount       Int          @default(0) @map("usage_count")
+  createdBy        String       @map("created_by")
+  organizationId   String?      @map("organization_id")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
 
-  creator  User      @relation("TemplateCreator", fields: [createdBy], references: [id])
-  messages Message[]
+  creator      User          @relation("TemplateCreator", fields: [createdBy], references: [id])
+  organization Organization? @relation("OrgTemplates", fields: [organizationId], references: [id])
+  messages     Message[]
 
+  @@index([organizationId])
   @@map("templates")
 }
 

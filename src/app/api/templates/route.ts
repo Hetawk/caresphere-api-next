@@ -18,7 +18,7 @@ const createSchema = z.object({
 });
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
-  await getRequestUser(req);
+  const currentUser = await getRequestUser(req);
   const sp = req.nextUrl.searchParams;
   const { page, limit } = parsePaginationParams(sp);
   const type = sp.get("type") as TemplateType | null;
@@ -28,6 +28,7 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   const { items, total } = await listTemplates({
     page,
     limit,
+    organizationId: currentUser.organizationId ?? undefined,
     templateType: type ?? undefined,
     category,
     search,
@@ -41,6 +42,10 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const currentUser = await getRequestUser(req);
   const body = validate(createSchema, await req.json());
-  const template = await createTemplate(body, currentUser.id);
+  const template = await createTemplate(
+    body,
+    currentUser.id,
+    currentUser.organizationId ?? undefined,
+  );
   return successResponse(template, { status: 201 });
 });
