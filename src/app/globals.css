@@ -3,7 +3,41 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ── CareSphere Design Tokens (ported from Swift CareSphereColors.swift) ──── */
+:root {
+  --cs-primary:        #1F1C18;
+  --cs-primary-muted:  #1A1A1A;
+  --cs-gold:           #D4AF6A;
+  --cs-gold-deep:      #C8A061;
+  --cs-navy:           #182E5F;
+  --cs-maroon:         #8E0E00;
+  --cs-fg-light:       #E6E6E6;
+  --cs-bg:             #F7F3ED;
+  --cs-bg-secondary:   #EFE6DC;
+  --cs-bg-tertiary:    #FDFAF6;
+  --cs-bg-card:        #FFFEF8;
+  --cs-border:         #E3D4C2;
+  --cs-border-mid:     #BDA892;
+  --cs-border-dark:    #897A61;
+  --cs-text:           #1A1A1A;
+  --cs-text-muted:     rgba(26,26,26,0.6);
+  --cs-text-subtle:    rgba(26,26,26,0.35);
+  --cs-shadow:         rgba(0,0,0,0.12);
+  --cs-shadow-sm:      rgba(0,0,0,0.06);
+}
+
 @theme inline {
+  /* CareSphere brand utilities */
+  --color-cs-primary:       var(--cs-primary);
+  --color-cs-gold:          var(--cs-gold);
+  --color-cs-gold-deep:     var(--cs-gold-deep);
+  --color-cs-navy:          var(--cs-navy);
+  --color-cs-maroon:        var(--cs-maroon);
+  --color-cs-bg:            var(--cs-bg);
+  --color-cs-bg-card:       var(--cs-bg-card);
+  --color-cs-border:        var(--cs-border);
+  --color-cs-text:          var(--cs-text);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -121,5 +155,69 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-color: var(--cs-bg);
+    color: var(--cs-text);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
   }
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--cs-primary);
+    font-weight: 600;
+  }
+}
+
+/* ── CareSphere component utilities ──────────────────────────────────────── */
+@layer components {
+  .cs-btn-primary {
+    background: linear-gradient(135deg, var(--cs-gold) 0%, var(--cs-gold-deep) 100%);
+    color: var(--cs-primary);
+    font-weight: 600;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .cs-btn-primary:hover { opacity: 0.9; }
+  .cs-btn-primary:active { transform: scale(0.98); }
+
+  .cs-btn-ghost {
+    background: transparent;
+    color: var(--cs-gold);
+    border: 1px solid var(--cs-gold);
+    border-radius: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    transition: background 0.15s;
+  }
+  .cs-btn-ghost:hover { background: rgba(212,175,106,0.1); }
+
+  .cs-card {
+    background: var(--cs-bg-card);
+    border: 1px solid var(--cs-border);
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 6px var(--cs-shadow-sm), 0 4px 16px var(--cs-shadow);
+  }
+
+  .cs-input {
+    background: var(--cs-bg-tertiary);
+    border: 1px solid var(--cs-border-mid);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    color: var(--cs-text);
+    width: 100%;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .cs-input:focus {
+    outline: none;
+    border-color: var(--cs-gold);
+    box-shadow: 0 0 0 3px rgba(212,175,106,0.15);
+  }
+
+  .cs-sidebar {
+    background: var(--cs-primary);
+    color: var(--cs-fg-light);
+  }
+
+  .cs-badge-gold    { background: rgba(212,175,106,0.15); color: var(--cs-gold-deep); border: 1px solid rgba(200,160,97,0.3); }
+  .cs-badge-navy    { background: rgba(24,46,95,0.12);  color: var(--cs-navy); border: 1px solid rgba(24,46,95,0.25); }
+  .cs-badge-maroon  { background: rgba(142,14,0,0.1);   color: var(--cs-maroon); border: 1px solid rgba(142,14,0,0.2); }
+  .cs-badge-success { background: rgba(212,175,106,0.12); color: #6B7C5E; border: 1px solid rgba(107,124,94,0.25); }
+  .cs-badge-muted   { background: rgba(26,26,26,0.08);  color: var(--cs-text-muted); border: 1px solid rgba(26,26,26,0.12); }
 }
