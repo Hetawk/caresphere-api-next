@@ -12,10 +12,12 @@ export async function listTemplates(opts: {
   page: number;
   limit: number;
   templateType?: TemplateType;
+  category?: string;
   search?: string;
 }) {
   const where: Prisma.TemplateWhereInput = { isActive: true };
   if (opts.templateType) where.templateType = opts.templateType;
+  if (opts.category) where.category = opts.category;
   if (opts.search) {
     where.OR = [
       { name: { contains: opts.search, mode: "insensitive" } },

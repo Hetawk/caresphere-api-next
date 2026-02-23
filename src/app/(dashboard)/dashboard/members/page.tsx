@@ -194,7 +194,7 @@ export default function MembersPage() {
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1F1C18] text-xs font-semibold text-[#D4AF6A]">
-                            {getInitials(`${m.firstName} ${m.lastName}`)}
+                            {getInitials(m.firstName, m.lastName)}
                           </div>
                           <div>
                             <p className="font-medium text-[#1F1C18]">

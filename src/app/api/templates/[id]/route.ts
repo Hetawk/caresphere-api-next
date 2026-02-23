@@ -41,6 +41,16 @@ export const PUT = withErrorHandling(
   },
 );
 
+export const PATCH = withErrorHandling(
+  async (req: NextRequest, ctx: RouteParams) => {
+    const { id } = await ctx.params;
+    await getRequestUser(req);
+    const body = validate(updateSchema, await req.json());
+    const template = await updateTemplate(id, body);
+    return successResponse(template);
+  },
+);
+
 export const DELETE = withErrorHandling(
   async (req: NextRequest, ctx: RouteParams) => {
     const { id } = await ctx.params;

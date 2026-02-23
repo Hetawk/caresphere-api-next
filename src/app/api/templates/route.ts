@@ -23,11 +23,13 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   const { page, limit } = parsePaginationParams(sp);
   const type = sp.get("type") as TemplateType | null;
   const search = sp.get("search") ?? undefined;
+  const category = sp.get("category") ?? undefined;
 
   const { items, total } = await listTemplates({
     page,
     limit,
     templateType: type ?? undefined,
+    category,
     search,
   });
 
