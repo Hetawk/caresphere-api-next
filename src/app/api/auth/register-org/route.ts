@@ -10,7 +10,6 @@ import {
   orgCodeSchema,
 } from "@/lib/validate";
 import {
-  verifyRegistrationCode,
   completeRegistration,
   issueTokens,
 } from "@/services/auth.service";
@@ -41,25 +40,29 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     ...userData
   } = validate(schema, await req.json());
 
-  await verifyRegistrationCode(userData.email, userData.code);
+  // Validate org inputs BEFORE touching the OTP / user records so that any
+  // missing field returns a clean 400 without consuming the verification code.
+  if (organizationAction === "create" && !organizationName) {
+    throw new ValidationError(
+      "organizationName: required when creating an org",
+    );
+  }
+  if (organizationAction === "join" && !organizationCode) {
+    throw new ValidationError(
+      "organizationCode: required when joining an org",
+    );
+  }
+
   const user = await completeRegistration(userData);
 
   let organization;
   if (organizationAction === "create") {
-    if (!organizationName)
-      throw new ValidationError(
-        "organizationName: required when creating an org",
-      );
     organization = await createOrganization(
-      { name: organizationName },
+      { name: organizationName! },
       user.id,
     );
   } else {
-    if (!organizationCode)
-      throw new ValidationError(
-        "organizationCode: required when joining an org",
-      );
-    organization = await joinOrganization(organizationCode, user.id);
+    organization = await joinOrganization(organizationCode!, user.id);
   }
 
   const tokens = await issueTokens(user);

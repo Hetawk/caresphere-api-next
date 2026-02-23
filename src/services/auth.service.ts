@@ -42,13 +42,19 @@ export async function generateRegistrationCode(email: string): Promise<string> {
   });
   if (existing && existing.passwordHash !== "UNVERIFIED") {
     if (existing.status === "ACTIVE") {
+      // Allow re-registration for users stuck in partial state (no org assigned yet).
+      // This happens when completeRegistration succeeded but org creation/join failed.
+      if (existing.organizationId) {
+        throw new ConflictError(
+          "This email is already registered. Please login instead.",
+        );
+      }
+      // else: partial registration — fall through and regenerate the OTP
+    } else {
       throw new ConflictError(
-        "This email is already registered. Please login instead.",
+        "This email is already registered but not active. Please contact support.",
       );
     }
-    throw new ConflictError(
-      "This email is already registered but not active. Please contact support.",
-    );
   }
 
   const code = generateSixDigitCode();

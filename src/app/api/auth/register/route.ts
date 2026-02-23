@@ -9,7 +9,6 @@ import {
   verifyCodeSchema,
 } from "@/lib/validate";
 import {
-  verifyRegistrationCode,
   completeRegistration,
   issueTokens,
 } from "@/services/auth.service";
@@ -25,7 +24,6 @@ const schema = z.object({
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const data = validate(schema, await req.json());
-  await verifyRegistrationCode(data.email, data.code);
   const user = await completeRegistration(data);
   const tokens = await issueTokens(user);
   return successResponse({ user, ...tokens }, { status: 201 });

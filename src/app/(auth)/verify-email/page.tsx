@@ -24,6 +24,8 @@ function VerifyEmailContent() {
   const [success, setSuccess] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  // Prevent auto-submit loop: only fire once per completed code entry
+  const autoSubmittedRef = useRef(false);
 
   // countdown timer for resend
   useEffect(() => {
@@ -117,10 +119,17 @@ function VerifyEmailContent() {
     }
   }, [code, email, flow, router]);
 
-  // auto-submit when all digits filled
+  // auto-submit when all digits filled — only once per completed entry
   useEffect(() => {
-    if (code.length === CODE_LENGTH && !success && !loading) handleVerify();
-  }, [code, success, loading, handleVerify]);
+    if (code.length < CODE_LENGTH) {
+      autoSubmittedRef.current = false;
+      return;
+    }
+    if (!success && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true;
+      handleVerify();
+    }
+  }, [code, success, handleVerify]);
 
   const handleResend = async () => {
     if (countdown > 0 || resending) return;
