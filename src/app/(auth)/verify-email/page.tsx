@@ -221,7 +221,7 @@ function VerifyEmailContent() {
             {loading ? (
               <Spinner size="sm" className="text-[#D4AF6A]" />
             ) : flow === "register" ? (
-              "Verify &amp; create account"
+              "Verify & create account"
             ) : (
               "Verify email"
             )}

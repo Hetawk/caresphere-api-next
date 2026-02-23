@@ -427,7 +427,7 @@ export default function RegisterPage() {
               ) : (
                 <>
                   <UserPlus className="h-4 w-4" />
-                  Create account &amp; verify email
+                  Create account & verify email
                 </>
               )}
             </button>
