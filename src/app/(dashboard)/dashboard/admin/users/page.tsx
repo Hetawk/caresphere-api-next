@@ -22,7 +22,7 @@ export default function AdminUsersPage() {
     firstName: "",
     lastName: "",
     email: "",
-    role: "member",
+    role: "MEMBER",
     password: "",
     confirmPassword: "",
   });
@@ -64,7 +64,7 @@ export default function AdminUsersPage() {
       firstName: "",
       lastName: "",
       email: "",
-      role: "member",
+      role: "MEMBER",
       password: "",
       confirmPassword: "",
     });
@@ -73,8 +73,9 @@ export default function AdminUsersPage() {
 
   const openEdit = useCallback((u: AdminUser) => {
     setEditing(u);
-    setEditRole(u.role);
-    setEditStatus(u.isActive ? "active" : "inactive");
+    // Normalise to UPPERCASE enum value from API
+    setEditRole(String(u.role).toUpperCase());
+    setEditStatus(u.status ?? (u.isActive ? "ACTIVE" : "INACTIVE"));
   }, []);
 
   const handleEditSave = useCallback(async () => {
@@ -82,7 +83,7 @@ export default function AdminUsersPage() {
     setEditSaving(true);
     const res = await api.patch(`/admin/users/${editing.id}`, {
       role: editRole,
-      isActive: editStatus === "active",
+      status: editStatus, // UserStatus enum: ACTIVE | INACTIVE | SUSPENDED
     });
     setEditSaving(false);
     if (res.error) {
@@ -378,8 +379,9 @@ export default function AdminUsersPage() {
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
                 >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive (suspended)</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                  <option value="SUSPENDED">Suspended</option>
                 </select>
               </div>
             </div>

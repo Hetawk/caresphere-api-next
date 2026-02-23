@@ -1,6 +1,7 @@
 /** Shared TypeScript types for the CareSphere admin frontend */
 
 export type UserRole =
+  | "KINGDOM_SUPER_ADMIN"
   | "SUPER_ADMIN"
   | "ADMIN"
   | "MINISTRY_LEADER"
@@ -33,20 +34,31 @@ export interface AuthUser {
   avatarUrl?: string;
 }
 
+export type OrganizationType = "CHURCH" | "NONPROFIT" | "OTHER";
+
 export interface Organization {
   id: string;
   name: string;
-  code: string;
-  type: string;
+  slug: string;
+  /** Unique join code (e.g. "ABC123") — shown on dashboard and used by team members to join */
+  organizationCode: string;
+  /** Org classification; drives feature visibility (CHURCH → Bible features) */
+  organizationType: OrganizationType;
   email?: string;
   phone?: string;
   address?: string;
   city?: string;
+  state?: string;
   country?: string;
   website?: string;
   description?: string;
-  bibleEnabled?: boolean;
+  logoUrl?: string;
+  /** Bible features enabled — auto-true for CHURCH orgs, manually toggleable */
+  bibleEnabled: boolean;
+  isActive: boolean;
+  settings?: Record<string, unknown>;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Member {

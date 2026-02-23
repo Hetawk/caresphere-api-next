@@ -150,6 +150,42 @@ class TransactionalEmailService {
       from: this.fromEmail,
     });
   }
+
+  /**
+   * Security notice: sent whenever a password is successfully changed or reset.
+   * Gives the user a heads-up so they can act if it wasn't them.
+   */
+  async sendPasswordChangedEmail(
+    to: string,
+    userName: string,
+    via: "change" | "reset",
+  ): Promise<void> {
+    const actionLabel = via === "reset" ? "reset" : "changed";
+    const subject = `Your ${config.APP_NAME} password has been ${actionLabel}`;
+    const timestamp = new Date().toLocaleString("en-US", {
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+    const content = `
+      <h1 style="color:#1F1C18;margin-bottom:20px;">Password ${actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1)} Successfully</h1>
+      <p>Hi ${userName},</p>
+      <p>Your ${config.APP_NAME} account password was <strong>${actionLabel}</strong> on <strong>${timestamp}</strong>.</p>
+      <div style="background:#FEF9F0;border-left:4px solid #C8A061;padding:16px 20px;border-radius:4px;margin:24px 0;">
+        <p style="margin:0;font-size:14px;color:#1F1C18;">
+          <strong>Wasn't you?</strong> If you didn't ${actionLabel} your password, please
+          contact your administrator immediately or use the Forgot Password option
+          to secure your account.
+        </p>
+      </div>
+      <p style="color:#666;font-size:13px;">
+        For your security, you may want to review any recent activity on your account.
+      </p>
+      <p>Best regards,<br>The ${config.APP_NAME} Team</p>`;
+
+    await ekdSend.sendEmail(to, subject, wrapEmailBody(content), {
+      from: this.fromEmail,
+    });
+  }
 }
 
 /** Singleton — import this and call methods directly. */

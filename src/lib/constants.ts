@@ -9,6 +9,10 @@ export const ROUTES = {
   automation: "/dashboard/automation",
   settings: "/dashboard/settings",
   adminUsers: "/dashboard/admin/users",
+  adminRoles: "/dashboard/admin/roles",
+  // Platform-level (KINGDOM_SUPER_ADMIN only)
+  platformOrgs: "/dashboard/platform/organizations",
+  platformUsers: "/dashboard/platform/users",
 } as const;
 
 /** Sidebar navigation items */
@@ -45,22 +49,52 @@ export const NAV_ITEMS = [
   },
 ] as const;
 
-/** Items only visible to admins */
+/** Items only visible to org admins (SUPER_ADMIN / ADMIN) */
 export const ADMIN_NAV_ITEMS = [
   {
     label: "User Management",
     href: ROUTES.adminUsers,
     icon: "ShieldCheck",
   },
+  {
+    label: "Roles & Permissions",
+    href: ROUTES.adminRoles,
+    icon: "Shield",
+  },
 ] as const;
 
-/** CSS class per role — supports both UPPER and lowercase API values */
+/** Items only visible to KINGDOM_SUPER_ADMIN — platform-level control */
+export const PLATFORM_NAV_ITEMS = [
+  {
+    label: "All Organizations",
+    href: ROUTES.platformOrgs,
+    icon: "Globe",
+  },
+  {
+    label: "All Users",
+    href: ROUTES.platformUsers,
+    icon: "Users2",
+  },
+] as const;
+
+/**
+ * CSS class per role.
+ * Always use the UPPERCASE Prisma enum value (SUPER_ADMIN, ADMIN, …).
+ * Lowercase variants kept for backwards-compat with any old API responses.
+ */
 export const ROLE_BADGE: Record<string, string> = {
+  // ── Platform ──────────────────────────────────────────────────
+  KINGDOM_SUPER_ADMIN:
+    "bg-gradient-to-r from-[#8E0E00] to-[#C8A061] text-white border-0 font-bold",
+  // ── Org-level ─────────────────────────────────────────────────
   SUPER_ADMIN: "cs-badge-gold",
   ADMIN: "cs-badge-navy",
   MINISTRY_LEADER: "cs-badge-maroon",
   VOLUNTEER: "bg-amber-50 text-amber-700 border border-amber-200",
   MEMBER: "cs-badge-muted",
+  // ── Legacy lowercase ──────────────────────────────────────────
+  kingdom_super_admin:
+    "bg-gradient-to-r from-[#8E0E00] to-[#C8A061] text-white border-0 font-bold",
   super_admin: "cs-badge-gold",
   admin: "cs-badge-navy",
   ministry_leader: "cs-badge-maroon",
@@ -84,17 +118,24 @@ export const STATUS_BADGE: Record<string, string> = {
 };
 export const STATUS_BADGE_DEFAULT = "cs-badge-muted";
 
+/**
+ * All UserRole enum values in display order (UPPERCASE matches Prisma enum).
+ * KINGDOM_SUPER_ADMIN is omitted from org-level dropdowns — it is assigned only
+ * by the seeder/platform and cannot be self-selected.
+ */
 export const ALL_ROLES = [
-  "super_admin",
-  "admin",
-  "ministry_leader",
-  "volunteer",
-  "member",
+  "SUPER_ADMIN",
+  "ADMIN",
+  "MINISTRY_LEADER",
+  "VOLUNTEER",
+  "MEMBER",
 ] as const;
 
+export type AppRole = (typeof ALL_ROLES)[number];
+
 export const MEMBER_STATUSES = [
-  "active",
-  "inactive",
-  "pending",
-  "needs_follow_up",
+  "ACTIVE",
+  "INACTIVE",
+  "PENDING",
+  "NEEDS_FOLLOW_UP",
 ] as const;

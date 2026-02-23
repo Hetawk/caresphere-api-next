@@ -30,7 +30,12 @@ export default function TemplatesPage() {
       return;
     }
     setSaving(true);
-    const res = await api.post<Template>("/templates", form);
+    const res = await api.post<Template>("/templates", {
+      name: form.name,
+      subject: form.subject,
+      content: form.body,
+      templateType: form.type.toUpperCase(),
+    });
     setSaving(false);
     if (res.error) {
       toast.error(res.error);

@@ -9,10 +9,7 @@ import {
   verifyCodeSchema,
   orgCodeSchema,
 } from "@/lib/validate";
-import {
-  completeRegistration,
-  issueTokens,
-} from "@/services/auth.service";
+import { completeRegistration, issueTokens } from "@/services/auth.service";
 import {
   createOrganization,
   joinOrganization,
@@ -48,9 +45,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     );
   }
   if (organizationAction === "join" && !organizationCode) {
-    throw new ValidationError(
-      "organizationCode: required when joining an org",
-    );
+    throw new ValidationError("organizationCode: required when joining an org");
   }
 
   const user = await completeRegistration(userData);

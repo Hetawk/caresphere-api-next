@@ -10,6 +10,8 @@ import { toPrismaPage } from "@/lib/pagination";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export type RecipientGroup = "ALL" | "ACTIVE" | "INACTIVE" | "PENDING";
+
 export interface MessageCreateInput {
   title: string;
   content: string;
@@ -18,9 +20,16 @@ export interface MessageCreateInput {
   senderName?: string;
   senderEmail?: string;
   senderPhone?: string;
+  senderWhatsapp?: string;
   templateId?: string;
   senderProfileId?: string;
   recipientMemberIds?: string[];
+  /** Bulk-select members by status group */
+  recipientGroup?: RecipientGroup;
+  /** Org scope for bulk recipient resolution */
+  organizationId?: string;
+  /** Human-readable channel label stored in metadata */
+  channelLabel?: string;
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
@@ -30,10 +39,12 @@ export async function listMessages(opts: {
   limit: number;
   status?: MessageStatus;
   type?: MessageType;
+  createdBy?: string;
 }) {
   const where: Prisma.MessageWhereInput = {};
   if (opts.status) where.status = opts.status;
   if (opts.type) where.messageType = opts.type;
+  if (opts.createdBy) where.createdBy = opts.createdBy;
 
   const [items, total] = await prisma.$transaction([
     prisma.message.findMany({
@@ -60,35 +71,84 @@ export async function createMessage(
   data: MessageCreateInput,
   createdBy: string,
 ) {
-  const { recipientMemberIds, ...rest } = data;
+  const {
+    recipientMemberIds,
+    recipientGroup,
+    organizationId,
+    channelLabel,
+    senderWhatsapp,
+    ...rest
+  } = data;
+
+  const msgType = data.messageType ?? MessageType.EMAIL;
 
   const message = await prisma.message.create({
     data: {
       ...rest,
-      status: MessageStatus.DRAFT,
-      messageType: data.messageType ?? MessageType.EMAIL,
+      messageType: msgType,
+      status: data.scheduledFor ? MessageStatus.SCHEDULED : MessageStatus.DRAFT,
       scheduledFor: data.scheduledFor ? new Date(data.scheduledFor) : undefined,
       createdBy,
+      messageMetadata: {
+        ...(channelLabel ? { channelLabel } : {}),
+        ...(senderWhatsapp ? { senderWhatsapp } : {}),
+        ...(recipientGroup ? { recipientGroup } : {}),
+      },
     },
   });
 
-  // Optionally pre-populate recipients
+  // Resolve recipients from explicit IDs
+  let members: {
+    id: string;
+    email: string | null;
+    phone: string | null;
+    whatsappNumber: string | null;
+  }[] = [];
+
   if (recipientMemberIds?.length) {
-    const members = await prisma.member.findMany({
+    members = await prisma.member.findMany({
       where: { id: { in: recipientMemberIds } },
-      select: { id: true, email: true, phone: true },
+      select: { id: true, email: true, phone: true, whatsappNumber: true },
     });
+  } else if (recipientGroup) {
+    // Bulk-select members by group
+    const where: Record<string, unknown> = organizationId
+      ? { organizationId }
+      : {};
+    if (recipientGroup !== "ALL") {
+      where.memberStatus = recipientGroup;
+    }
+    members = await prisma.member.findMany({
+      where,
+      select: { id: true, email: true, phone: true, whatsappNumber: true },
+    });
+  }
+
+  if (members.length > 0) {
     await prisma.messageRecipient.createMany({
       data: members.map((m) => ({
         messageId: message.id,
         memberId: m.id,
         recipientEmail: m.email ?? undefined,
-        recipientPhone: m.phone ?? undefined,
+        recipientPhone:
+          msgType === MessageType.SMS
+            ? (m.phone ?? undefined)
+            : msgType === MessageType.PUSH
+              ? (m.whatsappNumber ?? m.phone ?? undefined) // PUSH = WhatsApp channel
+              : (m.phone ?? undefined),
       })),
+    });
+
+    // Update recipient count
+    await prisma.message.update({
+      where: { id: message.id },
+      data: { recipientCount: members.length },
     });
   }
 
-  return message;
+  return prisma.message.findUnique({ where: { id: message.id } }) as Promise<
+    NonNullable<Awaited<ReturnType<typeof prisma.message.findUnique>>>
+  >;
 }
 
 export async function updateMessage(

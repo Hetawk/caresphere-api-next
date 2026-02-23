@@ -57,7 +57,11 @@ export function useAuth() {
     router.push("/login");
   }, [router]);
 
-  const isAdmin = user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
+  const isAdmin =
+    user?.role === "SUPER_ADMIN" ||
+    user?.role === "ADMIN" ||
+    user?.role === "KINGDOM_SUPER_ADMIN";
+  const isKingdomAdmin = user?.role === "KINGDOM_SUPER_ADMIN";
 
-  return { user, loading, login, logout, isAdmin };
+  return { user, loading, login, logout, isAdmin, isKingdomAdmin };
 }

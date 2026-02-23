@@ -36,9 +36,15 @@ export async function getRequestUser(req: NextRequest) {
   return user;
 }
 
-/** Require at least one of the given roles. */
+/**
+ * Require at least one of the given roles.
+ * KINGDOM_SUPER_ADMIN always passes — they are the platform owner and have
+ * unrestricted access across all organisations and all routes.
+ */
 export async function requireRoles(req: NextRequest, ...roles: UserRole[]) {
   const user = await getRequestUser(req);
+  // Platform owner bypasses all role gates
+  if (user.role === UserRole.KINGDOM_SUPER_ADMIN) return user;
   if (!roles.includes(user.role)) {
     throw new AuthorizationError(
       `Role '${user.role}' is not permitted. Required: ${roles.join(", ")}`,
@@ -47,11 +53,29 @@ export async function requireRoles(req: NextRequest, ...roles: UserRole[]) {
   return user;
 }
 
+/**
+ * Require the caller to be the KINGDOM_SUPER_ADMIN.
+ * Use this for platform-level routes that should never be accessible to
+ * regular org admins.
+ */
+export async function requireKingdomAdmin(req: NextRequest) {
+  const user = await getRequestUser(req);
+  if (user.role !== UserRole.KINGDOM_SUPER_ADMIN) {
+    throw new AuthorizationError("Platform-level access required");
+  }
+  return user;
+}
+
 export const MANAGER_ROLES: UserRole[] = [
+  UserRole.KINGDOM_SUPER_ADMIN,
   UserRole.SUPER_ADMIN,
   UserRole.ADMIN,
   UserRole.MINISTRY_LEADER,
   UserRole.VOLUNTEER,
 ];
 
-export const ADMIN_ROLES: UserRole[] = [UserRole.SUPER_ADMIN, UserRole.ADMIN];
+export const ADMIN_ROLES: UserRole[] = [
+  UserRole.KINGDOM_SUPER_ADMIN,
+  UserRole.SUPER_ADMIN,
+  UserRole.ADMIN,
+];

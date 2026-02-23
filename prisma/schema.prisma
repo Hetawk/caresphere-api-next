@@ -12,11 +12,12 @@ datasource db {
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 enum UserRole {
-  SUPER_ADMIN
-  ADMIN
-  MINISTRY_LEADER
-  VOLUNTEER
-  MEMBER
+  KINGDOM_SUPER_ADMIN // Platform-wide global admin — EKD Digital internal only
+  SUPER_ADMIN // Organisation owner / super admin
+  ADMIN // Organisation admin
+  MINISTRY_LEADER // Ministry / department leader
+  VOLUNTEER // Volunteer / team helper
+  MEMBER // Standard member
 }
 
 enum UserStatus {

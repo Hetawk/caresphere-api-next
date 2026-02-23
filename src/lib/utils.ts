@@ -40,11 +40,21 @@ export function getInitials(firstName?: string, lastName?: string) {
 /** Map a role key to its human-readable display label */
 export function roleLabel(role: string) {
   const map: Record<string, string> = {
+    // Platform
+    KINGDOM_SUPER_ADMIN: "Kingdom Super Admin",
+    kingdom_super_admin: "Kingdom Super Admin",
+    // Org-level
     SUPER_ADMIN: "Super Admin",
     ADMIN: "Admin",
     MINISTRY_LEADER: "Ministry Leader",
     VOLUNTEER: "Volunteer",
     MEMBER: "Member",
+    // Legacy lowercase
+    super_admin: "Super Admin",
+    admin: "Admin",
+    ministry_leader: "Ministry Leader",
+    volunteer: "Volunteer",
+    member: "Member",
   };
   return map[role] ?? role;
 }

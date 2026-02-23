@@ -54,9 +54,7 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     organizationId: org?.id,
   });
 
-  return successResponse(items, {
-    metadata: paginationMeta(total, page, limit),
-  });
+  return successResponse({ items, ...paginationMeta(total, page, limit) });
 });
 
 export const POST = withErrorHandling(async (req: NextRequest) => {

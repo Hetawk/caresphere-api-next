@@ -3,7 +3,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS, ADMIN_NAV_ITEMS, ROUTES } from "@/lib/constants";
+import {
+  NAV_ITEMS,
+  ADMIN_NAV_ITEMS,
+  PLATFORM_NAV_ITEMS,
+  ROUTES,
+} from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard,
@@ -13,8 +18,11 @@ import {
   Zap,
   Settings,
   ShieldCheck,
+  Shield,
   LogOut,
   ChevronRight,
+  Globe,
+  Users2,
 } from "lucide-react";
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
@@ -25,6 +33,9 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Zap,
   Settings,
   ShieldCheck,
+  Shield,
+  Globe,
+  Users2,
 };
 
 interface NavItemProps {
@@ -63,7 +74,7 @@ function NavItem({ href, icon, label, active, collapsed }: NavItemProps) {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, isKingdomAdmin } = useAuth();
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-[rgba(255,255,255,0.08)] bg-[#1F1C18]">
@@ -105,6 +116,22 @@ export function Sidebar() {
               Admin
             </p>
             {ADMIN_NAV_ITEMS.map((item) => (
+              <NavItem
+                key={item.href}
+                {...item}
+                active={pathname.startsWith(item.href)}
+              />
+            ))}
+          </>
+        )}
+
+        {isKingdomAdmin && (
+          <>
+            <div className="my-3 border-t border-[rgba(255,255,255,0.06)]" />
+            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[#504840]">
+              Platform
+            </p>
+            {PLATFORM_NAV_ITEMS.map((item) => (
               <NavItem
                 key={item.href}
                 {...item}

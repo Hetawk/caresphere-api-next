@@ -8,10 +8,7 @@ import {
   passwordSchema,
   verifyCodeSchema,
 } from "@/lib/validate";
-import {
-  completeRegistration,
-  issueTokens,
-} from "@/services/auth.service";
+import { completeRegistration, issueTokens } from "@/services/auth.service";
 
 const schema = z.object({
   email: emailSchema,

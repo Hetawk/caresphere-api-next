@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import {
   Users,
   Mail,
@@ -6,16 +7,32 @@ import {
   UserCheck,
   TrendingUp,
   FileText,
+  Copy,
+  Check,
+  Share2,
 } from "lucide-react";
 import { StatCard } from "@/components/stats/StatCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useApi } from "@/hooks/use-api";
-import type { AnalyticsDashboard } from "@/lib/types";
+import type { AnalyticsDashboard, Organization } from "@/lib/types";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatDate } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { data, loading, error } = useApi<AnalyticsDashboard>("/analytics");
+  const { data: org } = useApi<Organization>("/orgs/me");
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  const handleCopyCode = async () => {
+    if (!org?.organizationCode) return;
+    try {
+      await navigator.clipboard.writeText(org.organizationCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      // fallback silent
+    }
+  };
 
   if (loading) {
     return (
@@ -82,6 +99,44 @@ export default function DashboardPage() {
       {error && (
         <div className="rounded-lg border border-[#8E0E00]/20 bg-[rgba(142,14,0,0.06)] px-4 py-3 text-sm text-[#8E0E00]">
           {error}
+        </div>
+      )}
+
+      {/* Org Join Code Banner */}
+      {org?.organizationCode && (
+        <div className="flex flex-col gap-3 rounded-xl border border-[#E3D4C2] bg-gradient-to-r from-[#1F1C18] to-[#2C2820] p-5 sm:flex-row sm:items-center">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#C8A061]/20">
+            <Share2 className="h-5 w-5 text-[#D4AF6A]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#C8A061]">
+              Organization Join Code
+            </p>
+            <p className="text-xs text-[rgba(255,255,255,0.5)]">
+              Share with team members so they can join your organization
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-lg border border-[#C8A061]/30 bg-[rgba(200,160,97,0.12)] px-4 py-2 font-mono text-lg font-bold tracking-[0.2em] text-white">
+              {org.organizationCode}
+            </span>
+            <button
+              onClick={handleCopyCode}
+              className="flex items-center gap-1.5 rounded-lg border border-[#C8A061]/50 bg-[#C8A061]/10 px-3 py-2 text-xs font-medium text-[#D4AF6A] transition-colors hover:bg-[#C8A061] hover:text-[#1F1C18]"
+            >
+              {codeCopied ? (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
 

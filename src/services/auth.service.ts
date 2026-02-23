@@ -18,6 +18,7 @@ import {
 } from "@/lib/errors";
 import { UserRole, UserStatus } from "@prisma/client";
 import { config } from "@/lib/config";
+import { transactionalEmail } from "@/services/email/transactional.service";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -263,7 +264,7 @@ export async function resetPasswordWithToken(
     throw new ValidationError({ token: "Invalid or expired token" });
   }
 
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id: user.id },
     data: {
       passwordHash: await hashPassword(newPassword),
@@ -271,6 +272,13 @@ export async function resetPasswordWithToken(
       resetTokenExpires: null,
     },
   });
+
+  // Fire-and-forget security notice — don't block response if email fails
+  transactionalEmail
+    .sendPasswordChangedEmail(updated.email, updated.firstName, "reset")
+    .catch(() => {});
+
+  return updated;
 }
 
 export async function changePassword(
@@ -289,8 +297,15 @@ export async function changePassword(
     });
   }
 
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id: userId },
     data: { passwordHash: await hashPassword(newPassword) },
   });
+
+  // Fire-and-forget security notice
+  transactionalEmail
+    .sendPasswordChangedEmail(updated.email, updated.firstName, "change")
+    .catch(() => {});
+
+  return updated;
 }
