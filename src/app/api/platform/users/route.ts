@@ -56,7 +56,11 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     prisma.user.count({ where }),
   ]);
 
-  return successResponse(users, {
-    metadata: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  return successResponse({
+    items: users,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
   });
 });

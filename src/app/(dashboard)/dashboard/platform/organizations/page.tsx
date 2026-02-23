@@ -28,7 +28,7 @@ interface OrgEntry {
   name: string;
   organizationCode: string;
   organizationType: "CHURCH" | "NONPROFIT" | "OTHER";
-  active: boolean;
+  isActive: boolean;
   createdAt: string;
   _count?: { users: number; members: number };
 }
@@ -172,7 +172,7 @@ export default function PlatformOrganizationsPage() {
                       <span className="font-semibold text-[#1F1C18] truncate">
                         {org.name}
                       </span>
-                      {org.active ? (
+                      {org.isActive ? (
                         <BadgeCheck className="h-4 w-4 shrink-0 text-emerald-500" />
                       ) : (
                         <Clock className="h-4 w-4 shrink-0 text-amber-400" />

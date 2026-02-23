@@ -49,11 +49,16 @@ export const verifyCodeSchema = z
   .length(6, "Code must be exactly 6 digits")
   .regex(/^\d+$/, "Code must contain digits only");
 
-/** 7-digit numeric organisation join code */
+/** 7-character alphanumeric organisation join code (letters + digits, case-insensitive) */
 export const orgCodeSchema = z
   .string()
-  .length(7, "Organisation code must be exactly 7 digits")
-  .regex(/^\d+$/, "Organisation code must contain digits only");
+  .trim()
+  .toUpperCase()
+  .length(7, "Organisation code must be exactly 7 characters")
+  .regex(
+    /^[A-Z0-9]+$/,
+    "Organisation code must contain letters and digits only",
+  );
 
 // ── Common object schemas ─────────────────────────────────────────────────────
 

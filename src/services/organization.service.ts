@@ -195,3 +195,41 @@ export async function validateOrgExists(id: string) {
   const count = await prisma.organization.count({ where: { id } });
   if (!count) throw new NotFoundError("Organization");
 }
+
+/** Return all organizations the user belongs to, with their role in each. */
+export async function getUserAllOrganizations(userId: string) {
+  const memberships = await prisma.organizationUser.findMany({
+    where: { userId },
+    include: {
+      organization: true,
+      role: { select: { name: true, displayName: true } },
+    },
+    orderBy: { joinedAt: "asc" },
+  });
+
+  return memberships.map((m) => ({
+    ...m.organization,
+    membership: {
+      isOwner: m.isOwner,
+      roleName: m.role?.name ?? "member",
+      roleDisplayName: m.role?.displayName ?? "Member",
+      joinedAt: m.joinedAt,
+    },
+  }));
+}
+
+/** Switch the user's active (default) organization. */
+export async function switchActiveOrganization(userId: string, orgId: string) {
+  // Verify the user is actually a member of the target org
+  const membership = await prisma.organizationUser.findFirst({
+    where: { userId, organizationId: orgId },
+  });
+  if (!membership) throw new NotFoundError("Organization membership");
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { organizationId: orgId },
+  });
+
+  return prisma.organization.findUniqueOrThrow({ where: { id: orgId } });
+}
