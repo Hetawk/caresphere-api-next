@@ -409,7 +409,10 @@ export async function updateTemplate(
         "updated_at" AS "updatedAt"
     `;
 
-    return { template: mapLegacyTemplate(rows[0]!) as TemplateRow, forked: false };
+    return {
+      template: mapLegacyTemplate(rows[0]!) as TemplateRow,
+      forked: false,
+    };
   }
 
   const template = await getTemplate(id);

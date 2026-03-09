@@ -2,31 +2,26 @@
 > caresphere-api-next@0.1.0 dev
 > next dev
 
+⚠ Port 3000 is in use by process 26463, using available port 3001 instead.
 ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
- We detected multiple lockfiles and selected the directory of /Volumes/1tb_ssd/EKD_Space/Documents/coding_env/swift/package-lock.json as the root directory.
+ We detected multiple lockfiles and selected the directory of /Users/ekd/Documents/coding/swift/package-lock.json as the root directory.
  To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
    See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
  Detected additional lockfiles: 
-   * /Volumes/1tb_ssd/EKD_Space/Documents/coding_env/swift/caresphere-api-next/package-lock.json
+   * /Users/ekd/Documents/coding/swift/caresphere-api-next/package-lock.json
 
 ▲ Next.js 16.1.6 (Turbopack)
-- Local:         http://localhost:3000
-- Network:       http://192.168.1.100:3000
+- Local:         http://localhost:3001
+- Network:       http://192.168.1.100:3001
 - Environments: .env
 
 ✓ Starting...
-⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
-✓ Ready in 4.1s
-○ Compiling /dashboard ...
- GET /dashboard/admin/analytics 404 in 4.9s (compile: 4.7s, render: 208ms)
- GET /dashboard/admin/analytics 404 in 663ms (compile: 270ms, render: 393ms)
- GET /dashboard/admin/analytics 404 in 211ms (compile: 58ms, render: 153ms)
- GET /dashboard/admin/analytics 404 in 293ms (compile: 63ms, render: 230ms)
- GET /dashboard/admin/analytics 404 in 557ms (compile: 222ms, render: 334ms)
- GET /dashboard/admin/analytics 404 in 314ms (compile: 14ms, render: 300ms)
- GET /dashboard/admin/analytics 404 in 179ms (compile: 21ms, render: 158ms)
- GET /dashboard/admin/analytics 404 in 359ms (compile: 8ms, render: 351ms)
- GET /dashboard/admin/analytics 404 in 554ms (compile: 205ms, render: 348ms)
- GET /dashboard/admin/analytics 404 in 64ms (compile: 18ms, render: 45ms)
- GET /dashboard/admin/analytics 404 in 322ms (compile: 51ms, render: 271ms)
- GET /dashboard/admin/analytics 404 in 461ms (compile: 7ms, render: 455ms)
+✓ Ready in 726ms
+Error: Both middleware file "./src/middleware.ts" and proxy file "./src/proxy.ts" are detected. Please use "./src/proxy.ts" only. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+    at ignore-listed frames
+⨯ unhandledRejection: Error: Both middleware file "./src/middleware.ts" and proxy file "./src/proxy.ts" are detected. Please use "./src/proxy.ts" only. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+    at ignore-listed frames
+⨯ unhandledRejection:  Error: Both middleware file "./src/middleware.ts" and proxy file "./src/proxy.ts" are detected. Please use "./src/proxy.ts" only. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+    at ignore-listed frames
+✓ Compiled in 539ms
+✓ Compiled in 5ms
