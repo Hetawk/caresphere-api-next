@@ -22,6 +22,7 @@ const createSchema = z.object({
   templateId: z.string().uuid().optional(),
   senderProfileId: z.string().uuid().optional(),
   recipientMemberIds: z.array(z.string().uuid()).optional(),
+  recipientEmails: z.array(z.string().email()).optional(),
   recipientGroup: z.enum(["ALL", "ACTIVE", "INACTIVE", "PENDING"]).optional(),
 });
 

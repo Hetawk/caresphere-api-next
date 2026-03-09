@@ -24,6 +24,7 @@ export interface MessageCreateInput {
   templateId?: string;
   senderProfileId?: string;
   recipientMemberIds?: string[];
+  recipientEmails?: string[];
   /** Bulk-select members by status group */
   recipientGroup?: RecipientGroup;
   /** Org scope for bulk recipient resolution */
@@ -73,6 +74,7 @@ export async function createMessage(
 ) {
   const {
     recipientMemberIds,
+    recipientEmails,
     recipientGroup,
     organizationId,
     channelLabel,
@@ -124,25 +126,49 @@ export async function createMessage(
     });
   }
 
-  if (members.length > 0) {
+  const normalizedEmails = Array.from(
+    new Set(
+      (recipientEmails ?? [])
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+
+  const memberEmails = new Set(
+    members
+      .map((m) => m.email?.trim().toLowerCase())
+      .filter((v): v is string => Boolean(v)),
+  );
+
+  const emailOnlyRecipients = normalizedEmails.filter(
+    (e) => !memberEmails.has(e),
+  );
+
+  if (members.length > 0 || emailOnlyRecipients.length > 0) {
     await prisma.messageRecipient.createMany({
-      data: members.map((m) => ({
-        messageId: message.id,
-        memberId: m.id,
-        recipientEmail: m.email ?? undefined,
-        recipientPhone:
-          msgType === MessageType.SMS
-            ? (m.phone ?? undefined)
-            : msgType === MessageType.PUSH
-              ? (m.whatsappNumber ?? m.phone ?? undefined) // PUSH = WhatsApp channel
-              : (m.phone ?? undefined),
-      })),
+      data: [
+        ...members.map((m) => ({
+          messageId: message.id,
+          memberId: m.id,
+          recipientEmail: m.email ?? undefined,
+          recipientPhone:
+            msgType === MessageType.SMS
+              ? (m.phone ?? undefined)
+              : msgType === MessageType.PUSH
+                ? (m.whatsappNumber ?? m.phone ?? undefined) // PUSH = WhatsApp channel
+                : (m.phone ?? undefined),
+        })),
+        ...emailOnlyRecipients.map((email) => ({
+          messageId: message.id,
+          recipientEmail: email,
+        })),
+      ],
     });
 
     // Update recipient count
     await prisma.message.update({
       where: { id: message.id },
-      data: { recipientCount: members.length },
+      data: { recipientCount: members.length + emailOnlyRecipients.length },
     });
   }
 

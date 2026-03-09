@@ -86,11 +86,14 @@ type OrgTemplate = {
 };
 type MemberHit = {
   id: string;
+  memberId?: string;
+  userId?: string;
   firstName?: string;
   lastName?: string;
   name?: string;
   email?: string;
   phone?: string;
+  source?: "member" | "user";
 };
 type CsvContact = { name?: string; email?: string; phone?: string };
 
@@ -184,16 +187,11 @@ export default function MessagesPage() {
 
   // ── Member search (debounced) ─────────────────────────────────────────────
   useEffect(() => {
-    if (memberQuery.trim().length < 2) {
-      setMemberResults([]);
-      setShowMemDrop(false);
-      return;
-    }
     if (memberTimerRef.current) clearTimeout(memberTimerRef.current);
     memberTimerRef.current = setTimeout(async () => {
       setSearchingMem(true);
       const res = await api.get<{ items?: MemberHit[] } | MemberHit[]>(
-        `/members?search=${encodeURIComponent(memberQuery.trim())}&limit=10`,
+        `/members/recipients?search=${encodeURIComponent(memberQuery.trim())}&limit=25`,
       );
       setSearchingMem(false);
       if (!res.error) {
@@ -205,8 +203,14 @@ export default function MessagesPage() {
           list.filter((m) => !selectedMembers.find((s) => s.id === m.id)),
         );
         setShowMemDrop(true);
+      } else {
+        setMemberResults([]);
+        setShowMemDrop(false);
       }
     }, 350);
+    return () => {
+      if (memberTimerRef.current) clearTimeout(memberTimerRef.current);
+    };
   }, [memberQuery, selectedMembers]);
 
   // ── CSV / Excel parser ────────────────────────────────────────────────────
@@ -378,7 +382,25 @@ export default function MessagesPage() {
     if (recipientMode === "group") {
       payload.recipientGroup = form.recipientGroup;
     } else if (recipientMode === "specific") {
-      payload.recipientMemberIds = selectedMembers.map((m) => m.id);
+      const memberIds = selectedMembers
+        .map((m) => m.memberId)
+        .filter((v): v is string => Boolean(v));
+      const emails = Array.from(
+        new Set(
+          selectedMembers
+            .map((m) => m.email?.trim())
+            .filter((v): v is string => Boolean(v)),
+        ),
+      );
+
+      if (memberIds.length === 0 && emails.length === 0) {
+        toast.error("Selected recipients have no member ID or email.");
+        setSending(false);
+        return;
+      }
+
+      if (memberIds.length > 0) payload.recipientMemberIds = memberIds;
+      if (emails.length > 0) payload.recipientEmails = emails;
     } else {
       // csv — pass emails as recipientEmails; add fallback recipientGroup
       payload.recipientEmails = csvContacts.map((c) => c.email).filter(Boolean);
@@ -834,9 +856,7 @@ export default function MessagesPage() {
                             placeholder="Search by name or email…"
                             value={memberQuery}
                             onChange={(e) => setMemberQuery(e.target.value)}
-                            onFocus={() =>
-                              memberResults.length > 0 && setShowMemDrop(true)
-                            }
+                            onFocus={() => setShowMemDrop(true)}
                             onBlur={() =>
                               setTimeout(() => setShowMemDrop(false), 200)
                             }
@@ -889,7 +909,8 @@ export default function MessagesPage() {
                         </div>
                         {!selectedMembers.length && (
                           <p className="text-[11px] text-[rgba(26,26,26,0.4)]">
-                            Type at least 2 characters to search…
+                            Start typing to filter recipients, or click in the
+                            field to browse org contacts.
                           </p>
                         )}
                       </div>
