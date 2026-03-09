@@ -62,7 +62,11 @@ export async function listMessages(opts: {
 export async function getMessage(id: string) {
   const msg = await prisma.message.findUnique({
     where: { id },
-    include: { template: true, senderProfile: true },
+    include: {
+      template: true,
+      senderProfile: true,
+      recipients: true,
+    },
   });
   if (!msg) throw new NotFoundError("Message");
   return msg;
@@ -185,13 +189,116 @@ export async function updateMessage(
   if (msg.status === MessageStatus.SENT) {
     throw new ValidationError({ status: "Cannot edit a sent message" });
   }
-  return prisma.message.update({
+
+  const {
+    recipientMemberIds,
+    recipientEmails,
+    recipientGroup,
+    organizationId,
+    channelLabel,
+    senderWhatsapp,
+    ...rest
+  } = data;
+
+  const updated = await prisma.message.update({
     where: { id },
     data: {
-      ...data,
+      ...rest,
       scheduledFor: data.scheduledFor ? new Date(data.scheduledFor) : undefined,
+      ...(channelLabel || senderWhatsapp || recipientGroup
+        ? {
+            messageMetadata: {
+              ...((msg.messageMetadata as Record<string, unknown> | null) ??
+                {}),
+              ...(channelLabel ? { channelLabel } : {}),
+              ...(senderWhatsapp ? { senderWhatsapp } : {}),
+              ...(recipientGroup ? { recipientGroup } : {}),
+            },
+          }
+        : {}),
     },
   });
+
+  if (
+    recipientMemberIds !== undefined ||
+    recipientEmails !== undefined ||
+    recipientGroup !== undefined
+  ) {
+    let members: {
+      id: string;
+      email: string | null;
+      phone: string | null;
+      whatsappNumber: string | null;
+    }[] = [];
+
+    if (recipientMemberIds?.length) {
+      members = await prisma.member.findMany({
+        where: { id: { in: recipientMemberIds } },
+        select: { id: true, email: true, phone: true, whatsappNumber: true },
+      });
+    } else if (recipientGroup) {
+      const where: Record<string, unknown> = organizationId
+        ? { organizationId }
+        : {};
+      if (recipientGroup !== "ALL") {
+        where.memberStatus = recipientGroup;
+      }
+      members = await prisma.member.findMany({
+        where,
+        select: { id: true, email: true, phone: true, whatsappNumber: true },
+      });
+    }
+
+    const normalizedEmails = Array.from(
+      new Set(
+        (recipientEmails ?? [])
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    );
+
+    const memberEmails = new Set(
+      members
+        .map((m) => m.email?.trim().toLowerCase())
+        .filter((v): v is string => Boolean(v)),
+    );
+    const emailOnlyRecipients = normalizedEmails.filter(
+      (e) => !memberEmails.has(e),
+    );
+
+    await prisma.$transaction([
+      prisma.messageRecipient.deleteMany({ where: { messageId: id } }),
+      ...(members.length > 0 || emailOnlyRecipients.length > 0
+        ? [
+            prisma.messageRecipient.createMany({
+              data: [
+                ...members.map((m) => ({
+                  messageId: id,
+                  memberId: m.id,
+                  recipientEmail: m.email ?? undefined,
+                  recipientPhone:
+                    updated.messageType === MessageType.SMS
+                      ? (m.phone ?? undefined)
+                      : updated.messageType === MessageType.PUSH
+                        ? (m.whatsappNumber ?? m.phone ?? undefined)
+                        : (m.phone ?? undefined),
+                })),
+                ...emailOnlyRecipients.map((email) => ({
+                  messageId: id,
+                  recipientEmail: email,
+                })),
+              ],
+            }),
+          ]
+        : []),
+      prisma.message.update({
+        where: { id },
+        data: { recipientCount: members.length + emailOnlyRecipients.length },
+      }),
+    ]);
+  }
+
+  return prisma.message.findUniqueOrThrow({ where: { id } });
 }
 
 export async function deleteMessage(id: string) {

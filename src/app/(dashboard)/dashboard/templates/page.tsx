@@ -18,6 +18,7 @@ import { useApi } from "@/hooks/use-api";
 import { useToast } from "@/hooks/use-toast";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { Spinner } from "@/components/ui/Spinner";
+import { VerseLookupInsert } from "@/components/bible/VerseLookupInsert";
 import { api } from "@/lib/api-client";
 import { formatDate, truncate } from "@/lib/utils";
 import type { Template } from "@/lib/types";
@@ -271,6 +272,16 @@ export default function TemplatesPage() {
                 placeholder="Template body — use {{name}}, {{org}} etc."
               />
             </div>
+
+            <VerseLookupInsert
+              onInsert={(text) =>
+                setForm((f) => ({
+                  ...f,
+                  body: f.body ? `${f.body}\n\n${text}` : text,
+                }))
+              }
+              compact
+            />
           </div>
           <div className="flex justify-end gap-3">
             <button
@@ -503,6 +514,16 @@ export default function TemplatesPage() {
                           onChange={eField("body")}
                         />
                       </div>
+
+                      <VerseLookupInsert
+                        onInsert={(text) =>
+                          setEditForm((f) => ({
+                            ...f,
+                            body: f.body ? `${f.body}\n\n${text}` : text,
+                          }))
+                        }
+                        compact
+                      />
                     </div>
                     <div className="flex justify-end gap-3">
                       <button

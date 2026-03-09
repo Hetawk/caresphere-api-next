@@ -19,9 +19,13 @@ const updateSchema = z.object({
   senderName: z.string().optional(),
   senderEmail: z.string().email().optional(),
   senderPhone: z.string().optional(),
+  senderWhatsapp: z.string().optional(),
+  channelLabel: z.string().optional(),
   templateId: z.string().uuid().optional(),
   senderProfileId: z.string().uuid().optional(),
   recipientMemberIds: z.array(z.string().uuid()).optional(),
+  recipientEmails: z.array(z.string().email()).optional(),
+  recipientGroup: z.enum(["ALL", "ACTIVE", "INACTIVE", "PENDING"]).optional(),
 });
 
 type RouteParams = { params: Promise<{ id: string }> };

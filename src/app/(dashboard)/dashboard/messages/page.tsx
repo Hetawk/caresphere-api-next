@@ -29,6 +29,7 @@ import { useApi } from "@/hooks/use-api";
 import { useToast } from "@/hooks/use-toast";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { Spinner } from "@/components/ui/Spinner";
+import { VerseLookupInsert } from "@/components/bible/VerseLookupInsert";
 import { api } from "@/lib/api-client";
 import { formatDate, truncate } from "@/lib/utils";
 import type { Message, PaginatedResponse } from "@/lib/types";
@@ -144,6 +145,9 @@ export default function MessagesPage() {
   const [showCompose, setShowCompose] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);
   const [sending, setSending] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [loadingDraft, setLoadingDraft] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const { toasts, toast, remove } = useToast();
 
@@ -329,6 +333,198 @@ export default function MessagesPage() {
     setShowTplPicker(false);
   };
 
+  const buildPayload = useCallback(() => {
+    const ch = CHANNELS.find((c) => c.id === form.channel)!;
+    const payload: Record<string, unknown> = {
+      title: form.subject,
+      content: form.body,
+      messageType: form.channel,
+      channelLabel: ch.label,
+      ...(form.scheduleEnabled && form.scheduledFor
+        ? { scheduledFor: new Date(form.scheduledFor).toISOString() }
+        : {}),
+      ...(form.senderName ? { senderName: form.senderName } : {}),
+      ...(form.channel === "EMAIL" && form.senderEmail
+        ? { senderEmail: form.senderEmail }
+        : {}),
+      ...(form.channel === "SMS" && form.senderPhone
+        ? { senderPhone: form.senderPhone }
+        : {}),
+      ...(form.channel === "PUSH" && form.senderWhatsapp
+        ? { senderWhatsapp: form.senderWhatsapp }
+        : {}),
+    };
+
+    if (recipientMode === "group") {
+      payload.recipientGroup = form.recipientGroup;
+    } else if (recipientMode === "specific") {
+      const memberIds = selectedMembers
+        .map((m) => m.memberId)
+        .filter((v): v is string => Boolean(v));
+      const emails = Array.from(
+        new Set(
+          selectedMembers
+            .map((m) => m.email?.trim())
+            .filter((v): v is string => Boolean(v)),
+        ),
+      );
+
+      if (memberIds.length === 0 && emails.length === 0) {
+        return { error: "Selected recipients have no member ID or email." };
+      }
+
+      if (memberIds.length > 0) payload.recipientMemberIds = memberIds;
+      if (emails.length > 0) payload.recipientEmails = emails;
+    } else {
+      payload.recipientEmails = csvContacts.map((c) => c.email).filter(Boolean);
+      payload.recipientGroup = "ALL";
+    }
+
+    return { payload };
+  }, [csvContacts, form, recipientMode, selectedMembers]);
+
+  const openDraftForEdit = useCallback(
+    async (messageId: string) => {
+      setLoadingDraft(true);
+      const res = await api.get(`/messages/${messageId}`);
+      setLoadingDraft(false);
+      if (res.error || !res.data) {
+        toast.error(res.error ?? "Failed to load draft.");
+        return;
+      }
+
+      const msg = res.data as Message & {
+        senderName?: string | null;
+        senderEmail?: string | null;
+        senderPhone?: string | null;
+        messageMetadata?: {
+          recipientGroup?: RecipientGroup;
+          senderWhatsapp?: string;
+        };
+        recipients?: Array<{
+          id: string;
+          memberId?: string | null;
+          recipientEmail?: string | null;
+          recipientPhone?: string | null;
+          member?: {
+            id: string;
+            firstName?: string | null;
+            lastName?: string | null;
+            email?: string | null;
+            phone?: string | null;
+          } | null;
+        }>;
+      };
+
+      const metadata = msg.messageMetadata ?? {};
+      const recipientGroup = metadata.recipientGroup;
+      const recipients = msg.recipients ?? [];
+      const hasSpecific = recipients.length > 0;
+
+      const mappedSpecific: MemberHit[] = recipients.map((r) => ({
+        id: r.memberId
+          ? `member:${r.memberId}`
+          : `email:${r.recipientEmail ?? r.id}`,
+        memberId: r.memberId ?? undefined,
+        firstName: r.member?.firstName ?? undefined,
+        lastName: r.member?.lastName ?? undefined,
+        name:
+          [r.member?.firstName, r.member?.lastName].filter(Boolean).join(" ") ||
+          r.recipientEmail ||
+          r.recipientPhone ||
+          r.id,
+        email: r.member?.email ?? r.recipientEmail ?? undefined,
+        phone: r.member?.phone ?? r.recipientPhone ?? undefined,
+        source: r.memberId ? "member" : "user",
+      }));
+
+      setEditingMessageId(messageId);
+      setForm({
+        ...DEFAULT_FORM,
+        subject: msg.subject ?? msg.title ?? "",
+        body: msg.body ?? msg.content ?? "",
+        channel: (msg.messageType?.toUpperCase() as ChannelId) || "EMAIL",
+        recipientGroup: recipientGroup ?? "ALL",
+        senderName: msg.senderName ?? "",
+        senderEmail: msg.senderEmail ?? "",
+        senderPhone: msg.senderPhone ?? "",
+        senderWhatsapp: metadata.senderWhatsapp ?? "",
+        scheduleEnabled: Boolean(msg.scheduledFor),
+        scheduledFor: msg.scheduledFor
+          ? new Date(msg.scheduledFor).toISOString().slice(0, 16)
+          : "",
+      });
+      setRecipientMode(hasSpecific ? "specific" : "group");
+      setSelectedMembers(mappedSpecific);
+      setMemberQuery("");
+      setMemberResults([]);
+      setCsvContacts([]);
+      setCsvFileName(null);
+      setCsvError(null);
+      setStep(2);
+      setShowCompose(true);
+    },
+    [toast],
+  );
+
+  const deleteMessageFromList = useCallback(
+    async (messageId: string) => {
+      const ok = window.confirm("Delete this message?");
+      if (!ok) return;
+      const res = await api.delete(`/messages/${messageId}`);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Message deleted.");
+      refetch();
+    },
+    [refetch, toast],
+  );
+
+  const sendDraftNow = useCallback(
+    async (messageId: string) => {
+      const res = await api.post(`/messages/${messageId}/send`, {});
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Draft sent.");
+      refetch();
+    },
+    [refetch, toast],
+  );
+
+  const saveDraft = useCallback(async () => {
+    if (!form.subject.trim() || !form.body.trim()) {
+      toast.error("Subject and body are required.");
+      return;
+    }
+
+    const built = buildPayload();
+    if ("error" in built) {
+      toast.error(built.error ?? "Invalid recipient selection.");
+      return;
+    }
+
+    setSavingDraft(true);
+    const payload = { ...built.payload, scheduledFor: undefined };
+    const res = editingMessageId
+      ? await api.put(`/messages/${editingMessageId}`, payload)
+      : await api.post("/messages", payload);
+    setSavingDraft(false);
+
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+
+    toast.success(editingMessageId ? "Draft updated." : "Draft saved.");
+    setShowCompose(false);
+    resetCompose();
+    refetch();
+  }, [buildPayload, editingMessageId, form.body, form.subject, refetch, toast]);
+
   // ── Recipient summary for Step 3 review ──────────────────────────────────
   const recipientSummary = () => {
     if (recipientMode === "specific")
@@ -359,70 +555,55 @@ export default function MessagesPage() {
       return;
     }
     setSending(true);
-    const ch = CHANNELS.find((c) => c.id === form.channel)!;
-    const payload: Record<string, unknown> = {
-      title: form.subject,
-      content: form.body,
-      messageType: form.channel,
-      channelLabel: ch.label,
-      ...(form.scheduleEnabled && form.scheduledFor
-        ? { scheduledFor: new Date(form.scheduledFor).toISOString() }
-        : {}),
-      ...(form.senderName ? { senderName: form.senderName } : {}),
-      ...(form.channel === "EMAIL" && form.senderEmail
-        ? { senderEmail: form.senderEmail }
-        : {}),
-      ...(form.channel === "SMS" && form.senderPhone
-        ? { senderPhone: form.senderPhone }
-        : {}),
-      ...(form.channel === "PUSH" && form.senderWhatsapp
-        ? { senderWhatsapp: form.senderWhatsapp }
-        : {}),
-    };
-    if (recipientMode === "group") {
-      payload.recipientGroup = form.recipientGroup;
-    } else if (recipientMode === "specific") {
-      const memberIds = selectedMembers
-        .map((m) => m.memberId)
-        .filter((v): v is string => Boolean(v));
-      const emails = Array.from(
-        new Set(
-          selectedMembers
-            .map((m) => m.email?.trim())
-            .filter((v): v is string => Boolean(v)),
-        ),
-      );
-
-      if (memberIds.length === 0 && emails.length === 0) {
-        toast.error("Selected recipients have no member ID or email.");
-        setSending(false);
-        return;
-      }
-
-      if (memberIds.length > 0) payload.recipientMemberIds = memberIds;
-      if (emails.length > 0) payload.recipientEmails = emails;
-    } else {
-      // csv — pass emails as recipientEmails; add fallback recipientGroup
-      payload.recipientEmails = csvContacts.map((c) => c.email).filter(Boolean);
-      payload.recipientGroup = "ALL";
+    const built = buildPayload();
+    if ("error" in built) {
+      toast.error(built.error ?? "Invalid recipient selection.");
+      setSending(false);
+      return;
     }
-    const res = await api.post(
-      form.scheduleEnabled ? "/messages" : "/messages/send",
-      payload,
-    );
+
+    const payload = built.payload;
+    const res = editingMessageId
+      ? form.scheduleEnabled
+        ? await api.put(`/messages/${editingMessageId}`, payload)
+        : await api
+            .put(`/messages/${editingMessageId}`, payload)
+            .then(async (u) => {
+              if (u.error) return u;
+              return api.post(`/messages/${editingMessageId}/send`, {});
+            })
+      : await api.post(
+          form.scheduleEnabled ? "/messages" : "/messages/send",
+          payload,
+        );
     setSending(false);
     if (res.error) {
       toast.error(res.error);
       return;
     }
     toast.success(
-      form.scheduleEnabled ? "Message scheduled." : "Message sent.",
+      form.scheduleEnabled
+        ? editingMessageId
+          ? "Scheduled draft updated."
+          : "Message scheduled."
+        : editingMessageId
+          ? "Draft sent."
+          : "Message sent.",
     );
     setShowCompose(false);
     resetCompose();
     refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, recipientMode, selectedMembers, csvContacts, toast, refetch]);
+  }, [
+    buildPayload,
+    editingMessageId,
+    form,
+    recipientMode,
+    selectedMembers.length,
+    csvContacts.length,
+    toast,
+    refetch,
+  ]);
 
   const resetCompose = () => {
     setForm(DEFAULT_FORM);
@@ -435,6 +616,7 @@ export default function MessagesPage() {
     setCsvError(null);
     setShowTplPicker(false);
     setOrgTemplates([]);
+    setEditingMessageId(null);
   };
   const openCompose = () => {
     resetCompose();
@@ -504,7 +686,12 @@ export default function MessagesPage() {
               return (
                 <div
                   key={m.id}
-                  className="flex items-start gap-4 px-6 py-4 hover:bg-[rgba(212,175,106,0.04)]"
+                  onClick={() => {
+                    if (sk === "DRAFT" || sk === "SCHEDULED") {
+                      void openDraftForEdit(m.id);
+                    }
+                  }}
+                  className={`flex items-start gap-4 px-6 py-4 hover:bg-[rgba(212,175,106,0.04)] ${sk === "DRAFT" || sk === "SCHEDULED" ? "cursor-pointer" : ""}`}
                 >
                   <div className="mt-0.5 shrink-0">
                     {STATUS_ICON[sk] ?? (
@@ -547,19 +734,57 @@ export default function MessagesPage() {
                       )}
                     </div>
                   </div>
-                  <span
-                    className={`mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${
-                      sk === "SENT"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : sk === "SCHEDULED"
-                          ? "border-amber-200 bg-amber-50 text-amber-700"
-                          : sk === "FAILED"
-                            ? "border-red-200 bg-red-50 text-red-700"
-                            : "border-[#E3D4C2] text-[rgba(26,26,26,0.5)]"
-                    }`}
-                  >
-                    {m.status?.toLowerCase()}
-                  </span>
+                  <div className="mt-0.5 shrink-0 flex flex-col items-end gap-2">
+                    {(sk === "DRAFT" || sk === "SCHEDULED") && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void openDraftForEdit(m.id);
+                          }}
+                          className="rounded border border-[#E3D4C2] px-2 py-0.5 text-[10px] font-medium text-[rgba(26,26,26,0.65)] hover:border-[#C8A061]"
+                        >
+                          Edit
+                        </button>
+                        {sk === "DRAFT" && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void sendDraftNow(m.id);
+                            }}
+                            className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
+                          >
+                            Send
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void deleteMessageFromList(m.id);
+                          }}
+                          className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${
+                        sk === "SENT"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : sk === "SCHEDULED"
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : sk === "FAILED"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-[#E3D4C2] text-[rgba(26,26,26,0.5)]"
+                      }`}
+                    >
+                      {m.status?.toLowerCase()}
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -599,7 +824,11 @@ export default function MessagesPage() {
             <div className="flex items-center justify-between border-b border-[#E3D4C2] bg-[#FAF7F3] px-6 py-4">
               <div>
                 <h2 className="text-base font-semibold text-[#1F1C18]">
-                  Compose Message
+                  {loadingDraft
+                    ? "Loading draft..."
+                    : editingMessageId
+                      ? "Edit Draft"
+                      : "Compose Message"}
                 </h2>
                 <p className="text-xs text-[rgba(26,26,26,0.5)]">
                   Step {step} of 3 —{" "}
@@ -1129,6 +1358,16 @@ export default function MessagesPage() {
                       }
                     />
                   </div>
+
+                  <VerseLookupInsert
+                    onInsert={(text) =>
+                      setForm((f) => ({
+                        ...f,
+                        body: f.body ? `${f.body}\n\n${text}` : text,
+                      }))
+                    }
+                    compact
+                  />
                 </div>
               )}
 
@@ -1272,52 +1511,74 @@ export default function MessagesPage() {
                 {step > 1 ? "← Back" : "Cancel"}
               </button>
               {step < 3 ? (
-                <button
-                  className="cs-btn-primary flex items-center gap-2"
-                  onClick={() => {
-                    if (
-                      step === 2 &&
-                      (!form.subject.trim() || !form.body.trim())
-                    ) {
-                      toast.error("Subject and body are required.");
-                      return;
-                    }
-                    if (
-                      step === 2 &&
-                      recipientMode === "specific" &&
-                      selectedMembers.length === 0
-                    ) {
-                      toast.error("Select at least one member.");
-                      return;
-                    }
-                    if (
-                      step === 2 &&
-                      recipientMode === "csv" &&
-                      csvContacts.length === 0
-                    ) {
-                      toast.error("Upload a file with at least one contact.");
-                      return;
-                    }
-                    setStep((s) => (s + 1) as 2 | 3);
-                  }}
-                >
-                  Continue →
-                </button>
-              ) : (
-                <button
-                  className="cs-btn-primary flex items-center gap-2"
-                  onClick={handleSend}
-                  disabled={sending}
-                >
-                  {sending ? (
-                    <Spinner size="sm" />
-                  ) : form.scheduleEnabled ? (
-                    <CalendarClock className="h-4 w-4" />
-                  ) : (
-                    <Send className="h-4 w-4" />
+                <div className="flex items-center gap-2">
+                  {step >= 2 && (
+                    <button
+                      className="cs-btn-ghost flex items-center gap-2"
+                      onClick={saveDraft}
+                      disabled={savingDraft}
+                    >
+                      {savingDraft ? <Spinner size="sm" /> : null}
+                      Save Draft
+                    </button>
                   )}
-                  {form.scheduleEnabled ? "Schedule Message" : "Send Now"}
-                </button>
+                  <button
+                    className="cs-btn-primary flex items-center gap-2"
+                    onClick={() => {
+                      if (
+                        step === 2 &&
+                        (!form.subject.trim() || !form.body.trim())
+                      ) {
+                        toast.error("Subject and body are required.");
+                        return;
+                      }
+                      if (
+                        step === 2 &&
+                        recipientMode === "specific" &&
+                        selectedMembers.length === 0
+                      ) {
+                        toast.error("Select at least one member.");
+                        return;
+                      }
+                      if (
+                        step === 2 &&
+                        recipientMode === "csv" &&
+                        csvContacts.length === 0
+                      ) {
+                        toast.error("Upload a file with at least one contact.");
+                        return;
+                      }
+                      setStep((s) => (s + 1) as 2 | 3);
+                    }}
+                  >
+                    Continue →
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    className="cs-btn-ghost flex items-center gap-2"
+                    onClick={saveDraft}
+                    disabled={savingDraft || sending}
+                  >
+                    {savingDraft ? <Spinner size="sm" /> : null}
+                    Save Draft
+                  </button>
+                  <button
+                    className="cs-btn-primary flex items-center gap-2"
+                    onClick={handleSend}
+                    disabled={sending || savingDraft}
+                  >
+                    {sending ? (
+                      <Spinner size="sm" />
+                    ) : form.scheduleEnabled ? (
+                      <CalendarClock className="h-4 w-4" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    {form.scheduleEnabled ? "Schedule Message" : "Send Now"}
+                  </button>
+                </div>
               )}
             </div>
           </div>
