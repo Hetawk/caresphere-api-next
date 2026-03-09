@@ -1,15 +1,14 @@
 /**
- * Next.js Middleware — CORS + public/protected route gating.
+ * Next.js Proxy (replaces middleware in Next.js 16) — CORS + API auth gating.
  *
  * Protected routes require a valid Bearer JWT in the Authorization header.
- * Public routes (auth + health) are exempted.
+ * Public routes (auth + health + explicit test endpoints) are exempted.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { config as appConfig } from "@/lib/config";
 
-// Routes that do NOT require authentication
 const PUBLIC_PREFIXES = [
   "/api/auth/send-verification-code",
   "/api/auth/register",
@@ -18,12 +17,13 @@ const PUBLIC_PREFIXES = [
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
   "/api/health",
-  "/api", // root health check (exact)
+  "/api/bible/test",
+  "/api",
 ];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(p + "/"),
+    (prefix) => pathname === prefix || pathname.startsWith(prefix + "/"),
   );
 }
 
@@ -41,24 +41,22 @@ function corsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const origin = req.headers.get("origin");
   const cors = corsHeaders(origin);
 
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new NextResponse(null, { status: 204, headers: cors });
   }
 
-  // Inject CORS headers into all responses
   const response = NextResponse.next();
-  Object.entries(cors).forEach(([k, v]) => response.headers.set(k, v));
+  Object.entries(cors).forEach(([key, value]) =>
+    response.headers.set(key, value),
+  );
 
-  // Skip auth check for public routes
   if (isPublic(pathname)) return response;
 
-  // Validate JWT for protected routes
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json(

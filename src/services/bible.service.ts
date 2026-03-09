@@ -9,16 +9,13 @@
  *     served from Postgres (no external API call needed).
  *
  * YouVersion Platform API:
- *  Docs: https://platform.youversion.com/platform/apps
+ *  Docs: https://developers.youversion.com/overview
  *  Base: config.YOUVERSION_API_URL  (default: https://api.youversion.com/v1)
- *  Auth: Authorization: Bearer <YOUVERSION_API_KEY>
+ *  Auth: X-YVP-App-Key: <YOUVERSION_API_KEY>
  *
- * Version ID reference (YouVersion internal IDs):
- *   1   = KJV
- *  59   = ESV
- * 111   = NIV
- * 116   = NLT
- * 206   = NKJV
+ * Note:
+ *  Bible/version availability depends on your app key permissions.
+ *  Example from current project key: 3034 (BSB) is accessible, 1 (KJV) is not.
  *
  * Reference formats accepted:
  *   "GEN.1.1"         → Genesis 1:1
@@ -37,32 +34,34 @@ export interface YouVersionVerse {
   id: string;
   reference: string;
   content: string;
-  version_id: number;
-  version_abbreviation: string;
+  version_id?: number;
+  version_abbreviation?: string;
   copyright?: string;
 }
 
 export interface YouVersionChapter {
   id: string; // e.g. "GEN.1"
-  book_id: string;
-  book_long_name: string;
-  chapter_number: number;
+  book_id?: string;
+  book_long_name?: string;
+  chapter_number?: number;
   verses: YouVersionVerse[];
-  version_id: number;
+  version_id?: number;
 }
 
 export interface YouVersionBook {
   id: string; // e.g. "GEN"
-  abbreviation: string;
-  long_name: string;
+  abbreviation?: string;
+  long_name?: string;
+  title?: string;
+  full_title?: string;
   canon?: string; // "ot" | "nt" | "deut"
-  chapters?: { id: string; chapter: number }[];
+  chapters?: { id: string; chapter?: number; passage_id?: string }[];
 }
 
 export interface YouVersionVersion {
   id: number;
   title: string;
-  abbreviation: string;
+  abbreviation?: string;
   local_abbreviation?: string;
   local_title?: string;
   language?: string;
@@ -70,9 +69,10 @@ export interface YouVersionVersion {
 }
 
 export interface YouVersionVotd {
-  day?: string; // ISO date
-  reference: string;
-  verse: YouVersionVerse;
+  day?: string | number;
+  reference?: string;
+  passage_id?: string;
+  verse?: YouVersionVerse;
   image?: { url: string; attribution: string };
 }
 
@@ -181,17 +181,23 @@ function apiKey(): string {
 
 async function yvFetch<T>(
   path: string,
-  params?: Record<string, string>,
+  params?: Record<string, string | string[]>,
 ): Promise<T> {
   const baseUrl = config.YOUVERSION_API_URL.replace(/\/$/, "");
   const url = new URL(`${baseUrl}${path}`);
   if (params) {
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    Object.entries(params).forEach(([k, v]) => {
+      if (Array.isArray(v)) {
+        v.forEach((item) => url.searchParams.append(k, item));
+      } else {
+        url.searchParams.set(k, v);
+      }
+    });
   }
 
   const res = await fetch(url.toString(), {
     headers: {
-      Authorization: `Bearer ${apiKey()}`,
+      "X-YVP-App-Key": apiKey(),
       "Content-Type": "application/json",
       Accept: "application/json",
     },
@@ -201,6 +207,12 @@ async function yvFetch<T>(
 
   if (!res.ok) {
     if (res.status === 404) throw new NotFoundError("Bible resource");
+    if (res.status === 403) {
+      const body = await res.text().catch(() => "");
+      throw new ValidationError(
+        `YouVersion access denied for this resource/version. ${body}`,
+      );
+    }
     const body = await res.text().catch(() => res.statusText);
     throw new Error(`YouVersion API error ${res.status}: ${body}`);
   }
@@ -212,6 +224,26 @@ async function yvFetch<T>(
 
 function defaultTranslation(): string {
   return config.BIBLE_DEFAULT_TRANSLATION || "1"; // 1 = KJV
+}
+
+function fallbackTranslationId(requestedId: string): string | null {
+  // Keep KJV as default preference, but allow graceful fallback when the app key
+  // does not have permission for KJV.
+  if (requestedId === "1") return "3034";
+  return null;
+}
+
+function toVerse(
+  reference: string,
+  content: string,
+  versionId: string,
+): YouVersionVerse {
+  return {
+    id: reference,
+    reference,
+    content,
+    version_id: Number(versionId),
+  };
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -229,15 +261,15 @@ export async function getTranslations(
     "translations",
     config.BIBLE_CACHE_TTL_TRANSLATIONS,
     async () => {
-      const params: Record<string, string> = {};
-      if (languageTag) params["language_tag"] = languageTag;
-      const data = await yvFetch<{
-        versions?: YouVersionVersion[];
-        data?: YouVersionVersion[];
-      }>("/bible/versions", params);
-      return (
-        data.versions ?? data.data ?? (data as unknown as YouVersionVersion[])
+      const params: Record<string, string | string[]> = {
+        "language_ranges[]": languageTag ? [languageTag] : ["en"],
+        page_size: "100",
+      };
+      const data = await yvFetch<{ data?: YouVersionVersion[] }>(
+        "/bibles",
+        params,
       );
+      return data.data ?? [];
     },
   );
 }
@@ -256,11 +288,10 @@ export async function getBooks(
     "books",
     config.BIBLE_CACHE_TTL_TRANSLATIONS,
     async () => {
-      const data = await yvFetch<{
-        books?: YouVersionBook[];
-        data?: YouVersionBook[];
-      }>("/bible/books", { version_id: vid });
-      return data.books ?? data.data ?? (data as unknown as YouVersionBook[]);
+      const data = await yvFetch<{ data?: YouVersionBook[] }>(
+        `/bibles/${vid}/books`,
+      );
+      return data.data ?? [];
     },
   );
 }
@@ -280,11 +311,27 @@ export async function getVerse(
     "verse",
     config.BIBLE_CACHE_TTL_VERSE,
     async () => {
-      const data = await yvFetch<{
-        verse?: YouVersionVerse;
-        data?: YouVersionVerse;
-      }>("/bible/verse", { id: reference, version_id: vid });
-      return data.verse ?? data.data ?? (data as unknown as YouVersionVerse);
+      try {
+        const data = await yvFetch<{
+          id?: string;
+          reference?: string;
+          content?: string;
+        }>(`/bibles/${vid}/passages/${encodeURIComponent(reference)}`);
+        return toVerse(data.reference ?? reference, data.content ?? "", vid);
+      } catch (error) {
+        const fallbackVid = fallbackTranslationId(vid);
+        if (!fallbackVid || translationId) throw error;
+        const fallbackData = await yvFetch<{
+          id?: string;
+          reference?: string;
+          content?: string;
+        }>(`/bibles/${fallbackVid}/passages/${encodeURIComponent(reference)}`);
+        return toVerse(
+          fallbackData.reference ?? reference,
+          fallbackData.content ?? "",
+          fallbackVid,
+        );
+      }
     },
   );
 }
@@ -304,11 +351,29 @@ export async function getPassage(
     "passage",
     config.BIBLE_CACHE_TTL_VERSE,
     async () => {
-      const data = await yvFetch<{
-        verses?: YouVersionVerse[];
-        data?: YouVersionVerse[];
-      }>("/bible/verses", { reference, version_id: vid });
-      return data.verses ?? data.data ?? (data as unknown as YouVersionVerse[]);
+      try {
+        const data = await yvFetch<{
+          id?: string;
+          reference?: string;
+          content?: string;
+        }>(`/bibles/${vid}/passages/${encodeURIComponent(reference)}`);
+        return [toVerse(data.reference ?? reference, data.content ?? "", vid)];
+      } catch (error) {
+        const fallbackVid = fallbackTranslationId(vid);
+        if (!fallbackVid || translationId) throw error;
+        const fallbackData = await yvFetch<{
+          id?: string;
+          reference?: string;
+          content?: string;
+        }>(`/bibles/${fallbackVid}/passages/${encodeURIComponent(reference)}`);
+        return [
+          toVerse(
+            fallbackData.reference ?? reference,
+            fallbackData.content ?? "",
+            fallbackVid,
+          ),
+        ];
+      }
     },
   );
 }
@@ -328,18 +393,35 @@ export async function getChapter(
     "chapter",
     config.BIBLE_CACHE_TTL_VERSE,
     async () => {
+      let targetVid = vid;
+      let data: { id?: string; reference?: string; content?: string };
+      try {
+        data = await yvFetch<{
+          id?: string;
+          reference?: string;
+          content?: string;
+        }>(`/bibles/${targetVid}/passages/${encodeURIComponent(chapterId)}`);
+      } catch (error) {
+        const fallbackVid = fallbackTranslationId(targetVid);
+        if (!fallbackVid || translationId) throw error;
+        targetVid = fallbackVid;
+        data = await yvFetch<{
+          id?: string;
+          reference?: string;
+          content?: string;
+        }>(`/bibles/${targetVid}/passages/${encodeURIComponent(chapterId)}`);
+      }
+
       const [bookId, chapterNum] = chapterId.split(".");
-      const data = await yvFetch<{
-        chapter?: YouVersionChapter;
-        data?: YouVersionChapter;
-      }>("/bible/chapter", {
+      return {
+        id: chapterId,
         book_id: bookId,
-        chapter: chapterNum ?? "1",
-        version_id: vid,
-      });
-      return (
-        data.chapter ?? data.data ?? (data as unknown as YouVersionChapter)
-      );
+        chapter_number: Number(chapterNum ?? "1"),
+        version_id: Number(targetVid),
+        verses: [
+          toVerse(data.reference ?? chapterId, data.content ?? "", targetVid),
+        ],
+      };
     },
   );
 }
@@ -354,29 +436,13 @@ export async function search(
   limit = 10,
   offset = 0,
 ): Promise<YouVersionSearchResult> {
-  const vid = translationId ?? defaultTranslation();
-  const cacheKey = `search:${vid}:${query.toLowerCase().trim()}:${limit}:${offset}`;
-  return cachedFetch(
-    cacheKey,
-    "search",
-    config.BIBLE_CACHE_TTL_SEARCH,
-    async () => {
-      const data = await yvFetch<{
-        total?: number;
-        verseItems?: YouVersionVerse[];
-        verses?: YouVersionVerse[];
-        data?: YouVersionVerse[];
-      }>("/bible/search", {
-        query,
-        version_id: vid,
-        limit: String(limit),
-        offset: String(offset),
-      });
-      return {
-        total: data.total ?? 0,
-        verseItems: data.verseItems ?? data.verses ?? data.data ?? [],
-      };
-    },
+  void translationId;
+  void limit;
+  void offset;
+  // Public YouVersion API for this app key does not expose a text-search endpoint.
+  // Keep the method so routes remain stable, but fail with a clear message.
+  throw new ValidationError(
+    `YouVersion search endpoint is not available for this API key. Query: "${query}"`,
   );
 }
 
@@ -424,7 +490,8 @@ export async function getVerseOfDay(
     };
   }
 
-  // Fetch YouVersion global VOTD
+  // Try YouVersion global VOTD endpoint first.
+  // Some app keys/plans don't expose it; fallback to a deterministic daily passage.
   const cacheKey = `votd:global:${scheduledDate.toISOString().slice(0, 10)}`;
   const votd = await cachedFetch<YouVersionVotd>(
     cacheKey,
@@ -432,17 +499,43 @@ export async function getVerseOfDay(
     86400, // cache global VOTD for 24h
     async () => {
       const vid = defaultTranslation();
-      const data = await yvFetch<{
-        day?: YouVersionVotd;
-        data?: YouVersionVotd;
-        verse?: YouVersionVerse;
-      }>("/bible/verse_of_the_day", { version_id: vid });
-      // Normalize response shape
-      if (data.day) return data.day;
-      if (data.data) return data.data;
-      // Some YouVersion endpoints return the verse directly
-      const verse = data as unknown as YouVersionVotd;
-      return verse;
+      const dayOfYear = Math.ceil(
+        (scheduledDate.getTime() -
+          new Date(scheduledDate.getFullYear(), 0, 0).getTime()) /
+          86400000,
+      );
+
+      try {
+        // Official endpoint returns { day, passage_id }.
+        const dayData = await yvFetch<{ day: number; passage_id: string }>(
+          `/verse_of_the_days/${dayOfYear}`,
+        );
+        const verse = await getVerse(dayData.passage_id, vid);
+        return {
+          day: dayData.day,
+          passage_id: dayData.passage_id,
+          reference: verse.reference,
+          verse,
+        };
+      } catch {
+        // noop - fall back below
+      }
+
+      const fallbackRefs = [
+        "JHN.3.16",
+        "PSA.23.1",
+        "ROM.8.28",
+        "PHP.4.13",
+        "JER.29.11",
+        "PRO.3.5-6",
+        "ISA.41.10",
+      ];
+      const ref = fallbackRefs[dayOfYear % fallbackRefs.length] ?? "JHN.3.16";
+      const verse = await getVerse(ref, vid);
+      return {
+        reference: verse.reference,
+        verse,
+      };
     },
   );
 

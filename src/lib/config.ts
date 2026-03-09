@@ -91,7 +91,7 @@ export const config = {
     "YOUVERSION_API_URL",
     "https://api.youversion.com/v1",
   ),
-  // YouVersion version IDs: 1=KJV, 59=ESV, 111=NIV, 116=NLT
+  // Default translation preference (KJV = 1).
   BIBLE_DEFAULT_TRANSLATION: optional("BIBLE_DEFAULT_TRANSLATION", "1"),
   // Cache TTLs (seconds)
   BIBLE_CACHE_TTL_VERSE: optionalInt("BIBLE_CACHE_TTL_VERSE", 604800), // 7 days
