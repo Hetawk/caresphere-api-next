@@ -5,6 +5,7 @@ export const ROUTES = {
   dashboard: "/dashboard",
   members: "/dashboard/members",
   messages: "/dashboard/messages",
+  bible: "/dashboard/bible",
   templates: "/dashboard/templates",
   automation: "/dashboard/automation",
   settings: "/dashboard/settings",
@@ -31,6 +32,11 @@ export const NAV_ITEMS = [
     label: "Messages",
     href: ROUTES.messages,
     icon: "Mail",
+  },
+  {
+    label: "Bible API",
+    href: ROUTES.bible,
+    icon: "BookOpen",
   },
   {
     label: "Templates",

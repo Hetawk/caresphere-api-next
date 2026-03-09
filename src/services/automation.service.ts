@@ -8,6 +8,7 @@ import { NotFoundError } from "@/lib/errors";
 import { Prisma } from "@prisma/client";
 import { toPrismaPage } from "@/lib/pagination";
 import { config } from "@/lib/config";
+import { getPassage } from "@/services/bible.service";
 
 export async function listRules(opts: {
   page: number;
@@ -63,6 +64,8 @@ export async function updateRule(
   data: {
     name?: string;
     description?: string;
+    triggerType?: string;
+    actionType?: string;
     triggerConfig?: Record<string, unknown>;
     actionConfig?: Record<string, unknown>;
     conditions?: Record<string, unknown>;
@@ -105,12 +108,32 @@ export async function executeRule(
   let actionResult: Record<string, unknown> = {};
 
   try {
-    // Placeholder execution logic — extend for real action types
-    actionResult = {
-      executed: true,
-      actionType: rule.actionType,
-      timestamp: new Date(),
-    };
+    const actionConfig = (rule.actionConfig ?? {}) as Record<string, unknown>;
+
+    if (rule.actionType === "fetch_bible_passage") {
+      const reference = String(actionConfig.bibleReference ?? "JHN.3.16");
+      const translationId = actionConfig.translationId
+        ? String(actionConfig.translationId)
+        : undefined;
+      const passage = await getPassage(reference, translationId);
+      actionResult = {
+        executed: true,
+        actionType: rule.actionType,
+        timestamp: new Date(),
+        bible: {
+          reference,
+          translationId: translationId ?? null,
+          passage,
+        },
+      };
+    } else {
+      // Placeholder execution logic for non-Bible actions
+      actionResult = {
+        executed: true,
+        actionType: rule.actionType,
+        timestamp: new Date(),
+      };
+    }
 
     await prisma.automationRule.update({
       where: { id },

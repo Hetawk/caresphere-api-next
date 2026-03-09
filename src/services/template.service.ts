@@ -11,6 +11,69 @@ import { NotFoundError, AuthorizationError } from "@/lib/errors";
 import { TemplateType, Prisma } from "@prisma/client";
 import { toPrismaPage } from "@/lib/pagination";
 
+type LegacyTemplateRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  templateType: TemplateType;
+  category: string | null;
+  subject: string | null;
+  content: string;
+  variables: string | null;
+  thumbnailUrl: string | null;
+  isActive: boolean;
+  usageCount: number;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type TemplateSchemaSupport = {
+  hasOrganizationId: boolean;
+  hasSystemTemplate: boolean;
+};
+
+let templateSchemaSupportCache: TemplateSchemaSupport | undefined;
+
+async function getTemplateSchemaSupport(): Promise<TemplateSchemaSupport> {
+  if (templateSchemaSupportCache !== undefined) {
+    return templateSchemaSupportCache;
+  }
+
+  const rows = await prisma.$queryRaw<
+    Array<{ column_name: string }>
+  >`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'templates' AND column_name IN ('organization_id', 'is_system_template')`;
+
+  const names = new Set(rows.map((r) => r.column_name));
+  templateSchemaSupportCache = {
+    hasOrganizationId: names.has("organization_id"),
+    hasSystemTemplate: names.has("is_system_template"),
+  };
+
+  return templateSchemaSupportCache;
+}
+
+function mapLegacyTemplate(row: LegacyTemplateRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    templateType: row.templateType,
+    category: row.category,
+    subject: row.subject,
+    content: row.content,
+    variables: row.variables,
+    thumbnailUrl: row.thumbnailUrl,
+    isActive: row.isActive,
+    usageCount: row.usageCount,
+    createdBy: row.createdBy,
+    organizationId: null,
+    isSystemTemplate: true,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export async function listTemplates(opts: {
   page: number;
   limit: number;
@@ -19,6 +82,67 @@ export async function listTemplates(opts: {
   category?: string;
   search?: string;
 }) {
+  const support = await getTemplateSchemaSupport();
+
+  if (!support.hasOrganizationId || !support.hasSystemTemplate) {
+    const clauses: Prisma.Sql[] = [Prisma.sql`"is_active" = true`];
+    if (opts.templateType) {
+      clauses.push(Prisma.sql`"template_type" = ${opts.templateType}`);
+    }
+    if (opts.category) {
+      clauses.push(Prisma.sql`"category" = ${opts.category}`);
+    }
+    if (opts.search?.trim()) {
+      const q = `%${opts.search.trim()}%`;
+      clauses.push(
+        Prisma.sql`("name" ILIKE ${q} OR COALESCE("subject", '') ILIKE ${q})`,
+      );
+    }
+
+    const whereSql =
+      clauses.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(clauses, " AND ")}`
+        : Prisma.sql``;
+
+    const page = toPrismaPage(opts.page, opts.limit);
+    const skip = page.skip ?? 0;
+    const take = page.take ?? opts.limit;
+
+    const items = await prisma.$queryRaw<LegacyTemplateRow[]>`
+      SELECT
+        "id",
+        "name",
+        "description",
+        "template_type" AS "templateType",
+        "category",
+        "subject",
+        "content",
+        "variables",
+        "thumbnail_url" AS "thumbnailUrl",
+        "is_active" AS "isActive",
+        "usage_count" AS "usageCount",
+        "created_by" AS "createdBy",
+        "created_at" AS "createdAt",
+        "updated_at" AS "updatedAt"
+      FROM "templates"
+      ${whereSql}
+      ORDER BY "created_at" DESC
+      OFFSET ${skip}
+      LIMIT ${take}
+    `;
+
+    const totalRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM "templates"
+      ${whereSql}
+    `;
+
+    return {
+      items: items.map(mapLegacyTemplate),
+      total: Number(totalRows[0]?.count ?? 0),
+    };
+  }
+
   // Show org-owned templates + global system templates (orgId = null).
   const orgFilter: Prisma.TemplateWhereInput = opts.organizationId
     ? {
@@ -60,6 +184,33 @@ export async function listTemplates(opts: {
 }
 
 export async function getTemplate(id: string) {
+  const support = await getTemplateSchemaSupport();
+  if (!support.hasOrganizationId || !support.hasSystemTemplate) {
+    const rows = await prisma.$queryRaw<LegacyTemplateRow[]>`
+      SELECT
+        "id",
+        "name",
+        "description",
+        "template_type" AS "templateType",
+        "category",
+        "subject",
+        "content",
+        "variables",
+        "thumbnail_url" AS "thumbnailUrl",
+        "is_active" AS "isActive",
+        "usage_count" AS "usageCount",
+        "created_by" AS "createdBy",
+        "created_at" AS "createdAt",
+        "updated_at" AS "updatedAt"
+      FROM "templates"
+      WHERE "id" = ${id}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) throw new NotFoundError("Template");
+    return mapLegacyTemplate(row);
+  }
+
   const t = await prisma.template.findUnique({ where: { id } });
   if (!t) throw new NotFoundError("Template");
   return t;
@@ -80,10 +231,58 @@ export async function createTemplate(
   createdBy: string,
   organizationId?: string,
 ) {
+  const support = await getTemplateSchemaSupport();
   const { variables, tags: _tags, ...rest } = data;
   const variablesStr = Array.isArray(variables)
     ? JSON.stringify(variables)
     : variables;
+
+  if (!support.hasOrganizationId || !support.hasSystemTemplate) {
+    const rows = await prisma.$queryRaw<LegacyTemplateRow[]>`
+      INSERT INTO "templates" (
+        "name",
+        "description",
+        "template_type",
+        "category",
+        "subject",
+        "content",
+        "variables",
+        "thumbnail_url",
+        "is_active",
+        "usage_count",
+        "created_by"
+      ) VALUES (
+        ${rest.name},
+        ${rest.description ?? null},
+        ${data.templateType ?? TemplateType.EMAIL},
+        ${rest.category ?? null},
+        ${rest.subject ?? null},
+        ${rest.content},
+        ${variablesStr ?? null},
+        ${rest.thumbnailUrl ?? null},
+        true,
+        0,
+        ${createdBy}
+      )
+      RETURNING
+        "id",
+        "name",
+        "description",
+        "template_type" AS "templateType",
+        "category",
+        "subject",
+        "content",
+        "variables",
+        "thumbnail_url" AS "thumbnailUrl",
+        "is_active" AS "isActive",
+        "usage_count" AS "usageCount",
+        "created_by" AS "createdBy",
+        "created_at" AS "createdAt",
+        "updated_at" AS "updatedAt"
+    `;
+    return mapLegacyTemplate(rows[0]!);
+  }
+
   return prisma.template.create({
     data: {
       ...rest,
@@ -160,6 +359,59 @@ export async function updateTemplate(
   },
   actor: { userId: string; organizationId?: string } = { userId: "system" },
 ): Promise<UpdateTemplateResult> {
+  const support = await getTemplateSchemaSupport();
+
+  if (!support.hasOrganizationId || !support.hasSystemTemplate) {
+    const template = await getTemplate(id);
+    const { tags: _legacyTags, variables, ...rest } = data;
+    const variablesStr = Array.isArray(variables)
+      ? JSON.stringify(variables)
+      : variables;
+
+    const merged = {
+      name: rest.name ?? template.name,
+      description: rest.description ?? template.description ?? null,
+      templateType: rest.templateType ?? template.templateType,
+      category: rest.category ?? template.category ?? null,
+      subject: rest.subject ?? template.subject ?? null,
+      content: rest.content ?? template.content,
+      variables: variablesStr ?? template.variables ?? null,
+      isActive: rest.isActive ?? template.isActive,
+    };
+
+    const rows = await prisma.$queryRaw<LegacyTemplateRow[]>`
+      UPDATE "templates"
+      SET
+        "name" = ${merged.name},
+        "description" = ${merged.description},
+        "template_type" = ${merged.templateType},
+        "category" = ${merged.category},
+        "subject" = ${merged.subject},
+        "content" = ${merged.content},
+        "variables" = ${merged.variables},
+        "is_active" = ${merged.isActive},
+        "updated_at" = NOW()
+      WHERE "id" = ${id}
+      RETURNING
+        "id",
+        "name",
+        "description",
+        "template_type" AS "templateType",
+        "category",
+        "subject",
+        "content",
+        "variables",
+        "thumbnail_url" AS "thumbnailUrl",
+        "is_active" AS "isActive",
+        "usage_count" AS "usageCount",
+        "created_by" AS "createdBy",
+        "created_at" AS "createdAt",
+        "updated_at" AS "updatedAt"
+    `;
+
+    return { template: mapLegacyTemplate(rows[0]!) as TemplateRow, forked: false };
+  }
+
   const template = await getTemplate(id);
   const { tags: _tags, variables, ...rest } = data;
   const variablesStr = Array.isArray(variables)
@@ -214,6 +466,17 @@ export async function deleteTemplate(
   id: string,
   actor?: { organizationId?: string },
 ) {
+  const support = await getTemplateSchemaSupport();
+
+  if (!support.hasOrganizationId || !support.hasSystemTemplate) {
+    await prisma.$executeRaw`
+      UPDATE "templates"
+      SET "is_active" = false, "updated_at" = NOW()
+      WHERE "id" = ${id}
+    `;
+    return { id, isActive: false };
+  }
+
   const template = await getTemplate(id);
 
   if (actor?.organizationId) {

@@ -23,7 +23,10 @@ import {
   ChevronRight,
   Globe,
   Users2,
+  BookOpen,
 } from "lucide-react";
+import { useApi } from "@/hooks/use-api";
+import type { Organization } from "@/lib/types";
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   LayoutDashboard,
@@ -36,6 +39,7 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Shield,
   Globe,
   Users2,
+  BookOpen,
 };
 
 interface NavItemProps {
@@ -75,6 +79,12 @@ function NavItem({ href, icon, label, active, collapsed }: NavItemProps) {
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout, isAdmin, isKingdomAdmin } = useAuth();
+  const { data: org } = useApi<Organization>("/orgs/me");
+
+  const navItems = NAV_ITEMS.filter((item) => {
+    if (item.href !== ROUTES.bible) return true;
+    return org?.organizationType === "CHURCH" || org?.bibleEnabled === true;
+  });
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-[rgba(255,255,255,0.08)] bg-[#1F1C18]">
@@ -97,7 +107,7 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavItem
             key={item.href}
             {...item}
