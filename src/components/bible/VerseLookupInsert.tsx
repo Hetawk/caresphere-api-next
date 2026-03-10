@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { normalizeBibleReference } from "@/lib/bible-reference";
 
 type Translation = {
-  id: number;
+  id: number | string; // string for supplemental providers (e.g. "bibleapi:kjv", "esv")
   title: string;
   abbreviation?: string;
 };

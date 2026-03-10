@@ -60,13 +60,14 @@ export interface YouVersionBook {
 }
 
 export interface YouVersionVersion {
-  id: number;
+  id: number | string; // string for supplemental providers (e.g. "bibleapi:kjv", "esv")
   title: string;
   abbreviation?: string;
   local_abbreviation?: string;
   local_title?: string;
   language?: string;
   language_tag?: string;
+  provider?: "youversion" | "bibleapi" | "esv";
 }
 
 export interface YouVersionVotd {
@@ -247,6 +248,235 @@ function toVerse(
   };
 }
 
+// ─── Supplemental Bible providers ────────────────────────────────────────────
+//
+// YouVersion is the PRIMARY and preferred Bible provider for all translations.
+// Every verse/passage lookup hits YouVersion first.
+//
+// However, YouVersion only licenses translations to app keys with explicit
+// publisher agreements.  Public-domain and open-access versions that our current
+// app key cannot reach are served by lightweight fallback providers so users
+// still see them in the dropdown:
+//
+//   • bible-api.com  — public-domain texts not in our YV key (KJV, YLT)
+//                      Used ONLY when the translation id starts with "bibleapi:"
+//   • ESV API        — Crossway free tier (requires ESV_API_KEY env var)
+//                      Used ONLY when translation id === "esv"
+//
+// Everything else goes through YouVersion exclusively.
+//
+// NIV and NKJV are NOT freely available through any public API — they require
+// direct commercial licensing from Biblica / Thomas Nelson respectively.
+
+/** Maps USFM book codes → human names accepted by bible-api.com and ESV API. */
+const USFM_BOOK_NAMES: Record<string, string> = {
+  GEN: "genesis",
+  EXO: "exodus",
+  LEV: "leviticus",
+  NUM: "numbers",
+  DEU: "deuteronomy",
+  JOS: "joshua",
+  JDG: "judges",
+  RUT: "ruth",
+  "1SA": "1 samuel",
+  "2SA": "2 samuel",
+  "1KI": "1 kings",
+  "2KI": "2 kings",
+  "1CH": "1 chronicles",
+  "2CH": "2 chronicles",
+  EZR: "ezra",
+  NEH: "nehemiah",
+  EST: "esther",
+  JOB: "job",
+  PSA: "psalms",
+  PRO: "proverbs",
+  ECC: "ecclesiastes",
+  SNG: "song of solomon",
+  ISA: "isaiah",
+  JER: "jeremiah",
+  LAM: "lamentations",
+  EZK: "ezekiel",
+  DAN: "daniel",
+  HOS: "hosea",
+  JOL: "joel",
+  AMO: "amos",
+  OBA: "obadiah",
+  JON: "jonah",
+  MIC: "micah",
+  NAM: "nahum",
+  HAB: "habakkuk",
+  ZEP: "zephaniah",
+  HAG: "haggai",
+  ZEC: "zechariah",
+  MAL: "malachi",
+  MAT: "matthew",
+  MRK: "mark",
+  LUK: "luke",
+  JHN: "john",
+  ACT: "acts",
+  ROM: "romans",
+  "1CO": "1 corinthians",
+  "2CO": "2 corinthians",
+  GAL: "galatians",
+  EPH: "ephesians",
+  PHP: "philippians",
+  COL: "colossians",
+  "1TH": "1 thessalonians",
+  "2TH": "2 thessalonians",
+  "1TI": "1 timothy",
+  "2TI": "2 timothy",
+  TIT: "titus",
+  PHM: "philemon",
+  HEB: "hebrews",
+  JAS: "james",
+  "1PE": "1 peter",
+  "2PE": "2 peter",
+  "1JN": "1 john",
+  "2JN": "2 john",
+  "3JN": "3 john",
+  JUD: "jude",
+  REV: "revelation",
+};
+
+/**
+ * Convert a USFM reference to a human-readable form accepted by bible-api.com
+ * and the ESV API.
+ *   "JHN.3.16"    → "john 3:16"
+ *   "JHN.3.16-18" → "john 3:16-18"
+ *   "PSA.23"      → "psalms 23"
+ */
+function usfmToHumanRef(usfm: string): string {
+  const parts = usfm.split(".");
+  const bookName =
+    USFM_BOOK_NAMES[parts[0].toUpperCase()] ?? parts[0].toLowerCase();
+  if (parts.length === 1) return bookName;
+  if (parts.length === 2) return `${bookName} ${parts[1]}`;
+  return `${bookName} ${parts[1]}:${parts[2]}`; // parts[2] may be "16" or "16-18"
+}
+
+interface BibleApiComResponse {
+  reference: string;
+  text: string;
+  translation_id: string;
+  translation_name: string;
+  verses: Array<{
+    book_id: string;
+    book_name: string;
+    chapter: number;
+    verse: number;
+    text: string;
+  }>;
+}
+
+/** Fetch a passage from bible-api.com (public-domain, no auth required). */
+async function fetchFromBibleApi(
+  reference: string,
+  translationCode: string,
+): Promise<YouVersionVerse[]> {
+  const humanRef = usfmToHumanRef(reference);
+  const baseUrl = config.BIBLE_PUBLIC_DOMAIN_API_URL.replace(/\/$/, "");
+  const url = `${baseUrl}/${encodeURIComponent(humanRef)}?translation=${encodeURIComponent(translationCode)}`;
+
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    next: { revalidate: 0 },
+  });
+
+  if (!res.ok) {
+    if (res.status === 404) throw new NotFoundError("Bible passage");
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`bible-api.com error ${res.status}: ${body}`);
+  }
+
+  const data: BibleApiComResponse = await res.json();
+  return [
+    {
+      id: `${translationCode}:${reference}`,
+      reference: data.reference ?? reference,
+      content: (data.text ?? "").trim(),
+      version_abbreviation: translationCode.toUpperCase(),
+    },
+  ];
+}
+
+interface EsvApiResponse {
+  canonical: string;
+  passages: string[];
+}
+
+/** Fetch a passage from the Crossway ESV API (requires ESV_API_KEY env var). */
+async function fetchFromEsvApi(reference: string): Promise<YouVersionVerse[]> {
+  if (!config.ESV_API_KEY)
+    throw new ValidationError("ESV_API_KEY is not configured");
+
+  const humanRef = usfmToHumanRef(reference);
+  const url = new URL(`${config.ESV_API_URL}/passage/text/`);
+  url.searchParams.set("q", humanRef);
+  url.searchParams.set("include-headings", "false");
+  url.searchParams.set("include-footnotes", "false");
+  url.searchParams.set("include-verse-numbers", "false");
+  url.searchParams.set("include-short-copyright", "true");
+  url.searchParams.set("include-passage-references", "false");
+
+  const res = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Token ${config.ESV_API_KEY}`,
+      Accept: "application/json",
+    },
+    next: { revalidate: 0 },
+  });
+
+  if (!res.ok) {
+    if (res.status === 404) throw new NotFoundError("Bible passage (ESV)");
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`ESV API error ${res.status}: ${body}`);
+  }
+
+  const data: EsvApiResponse = await res.json();
+  const text = (data.passages?.[0] ?? "").trim();
+  return [
+    {
+      id: `esv:${reference}`,
+      reference: data.canonical ?? reference,
+      content: text,
+      version_abbreviation: "ESV",
+    },
+  ];
+}
+
+/**
+ * Supplemental translations served by non-YouVersion providers.
+ * Merged into getTranslations() when the YouVersion app key does not include them.
+ */
+const SUPPLEMENTAL_TRANSLATIONS: YouVersionVersion[] = [
+  {
+    id: "bibleapi:kjv",
+    title: "King James Version",
+    abbreviation: "KJV",
+    language: "English",
+    language_tag: "en",
+    provider: "bibleapi",
+  },
+  {
+    id: "bibleapi:ylt",
+    title: "Young's Literal Translation",
+    abbreviation: "YLT",
+    language: "English",
+    language_tag: "en",
+    provider: "bibleapi",
+  },
+];
+
+/** ESV translation entry — only added when ESV_API_KEY is configured. */
+const ESV_TRANSLATION: YouVersionVersion = {
+  id: "esv",
+  title: "English Standard Version",
+  abbreviation: "ESV",
+  language: "English",
+  language_tag: "en",
+  provider: "esv",
+};
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -261,7 +491,7 @@ export async function getTranslations(
   languageTag?: string,
 ): Promise<YouVersionVersion[]> {
   const cacheKey = `translations:v2:${languageTag ?? "all"}`;
-  return cachedFetch(
+  const yvList = await cachedFetch(
     cacheKey,
     "translations",
     config.BIBLE_CACHE_TTL_TRANSLATIONS,
@@ -282,8 +512,6 @@ export async function getTranslations(
         );
         const items = data.data ?? [];
         all.push(...items);
-        // If the page returned fewer items than the page size we've reached
-        // the last page — stop paginating.
         if (items.length < PAGE_SIZE) break;
         page++;
       }
@@ -291,6 +519,22 @@ export async function getTranslations(
       return all;
     },
   );
+
+  // Merge supplemental translations not already present in the YouVersion list.
+  const existingAbbrevs = new Set(
+    yvList
+      .map((t) => (t.abbreviation ?? t.local_abbreviation ?? "").toUpperCase())
+      .filter(Boolean),
+  );
+  const toAdd: YouVersionVersion[] = SUPPLEMENTAL_TRANSLATIONS.filter(
+    (t) => !existingAbbrevs.has((t.abbreviation ?? "").toUpperCase()),
+  );
+  if (config.ESV_API_KEY && !existingAbbrevs.has("ESV")) {
+    toAdd.push(ESV_TRANSLATION);
+  }
+
+  // Return well-known translations (KJV, ESV) first so they appear at the top.
+  return [...toAdd, ...yvList];
 }
 
 /**
@@ -325,6 +569,35 @@ export async function getVerse(
 ): Promise<YouVersionVerse> {
   const vid = translationId ?? defaultTranslation();
   const cacheKey = `verse:${vid}:${reference}`;
+
+  // ── Supplemental providers ──
+  if (vid.startsWith("bibleapi:")) {
+    return cachedFetch(
+      cacheKey,
+      "verse",
+      config.BIBLE_CACHE_TTL_VERSE,
+      async () => {
+        const verses = await fetchFromBibleApi(
+          reference,
+          vid.slice("bibleapi:".length),
+        );
+        return verses[0] ?? { id: reference, reference, content: "" };
+      },
+    );
+  }
+  if (vid === "esv") {
+    return cachedFetch(
+      cacheKey,
+      "verse",
+      config.BIBLE_CACHE_TTL_VERSE,
+      async () => {
+        const verses = await fetchFromEsvApi(reference);
+        return verses[0] ?? { id: reference, reference, content: "" };
+      },
+    );
+  }
+
+  // ── YouVersion ──
   return cachedFetch(
     cacheKey,
     "verse",
@@ -365,6 +638,20 @@ export async function getPassage(
 ): Promise<YouVersionVerse[]> {
   const vid = translationId ?? defaultTranslation();
   const cacheKey = `passage:${vid}:${reference}`;
+
+  // ── Supplemental providers ──
+  if (vid.startsWith("bibleapi:")) {
+    return cachedFetch(cacheKey, "passage", config.BIBLE_CACHE_TTL_VERSE, () =>
+      fetchFromBibleApi(reference, vid.slice("bibleapi:".length)),
+    );
+  }
+  if (vid === "esv") {
+    return cachedFetch(cacheKey, "passage", config.BIBLE_CACHE_TTL_VERSE, () =>
+      fetchFromEsvApi(reference),
+    );
+  }
+
+  // ── YouVersion ──
   return cachedFetch(
     cacheKey,
     "passage",

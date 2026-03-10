@@ -113,6 +113,16 @@ export const config = {
   ), // 30 days
   BIBLE_CACHE_TTL_SEARCH: optionalInt("BIBLE_CACHE_TTL_SEARCH", 86400), // 1 day
 
+  // Supplemental Bible providers (for translations not licensed to the YouVersion key)
+  // bible-api.com — public domain texts (KJV, YLT), no authentication needed
+  BIBLE_PUBLIC_DOMAIN_API_URL: optional(
+    "BIBLE_PUBLIC_DOMAIN_API_URL",
+    "https://bible-api.com",
+  ),
+  // Crossway ESV API — free tier; register at crossway.org/esv-api/
+  ESV_API_KEY: optional("ESV_API_KEY", ""),
+  ESV_API_URL: optional("ESV_API_URL", "https://api.esv.org/v3"),
+
   // Logging
   LOG_LEVEL: optional("LOG_LEVEL", "info"),
 
