@@ -3,6 +3,10 @@
         {
             "path": "/api/birthdays/notify",
             "schedule": "0 8 * * *"
+        },
+        {
+            "path": "/api/messages/dispatch",
+            "schedule": "* * * * *"
         }
     ]
 }

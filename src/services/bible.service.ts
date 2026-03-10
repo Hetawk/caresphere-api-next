@@ -389,11 +389,16 @@ async function fetchFromBibleApi(
   }
 
   const data: BibleApiComResponse = await res.json();
+  // bible-api.com returns verse text with literal \n line breaks between verse
+  // fragments.  Collapse them into a single space so the verse reads as a
+  // continuous sentence in the message compose view.
+  const rawText = (data.text ?? "").trim();
+  const content = rawText.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ");
   return [
     {
       id: `${translationCode}:${reference}`,
       reference: data.reference ?? reference,
-      content: (data.text ?? "").trim(),
+      content,
       version_abbreviation: translationCode.toUpperCase(),
     },
   ];
@@ -529,7 +534,9 @@ export async function getTranslations(
   const toAdd: YouVersionVersion[] = SUPPLEMENTAL_TRANSLATIONS.filter(
     (t) => !existingAbbrevs.has((t.abbreviation ?? "").toUpperCase()),
   );
-  if (config.ESV_API_KEY && !existingAbbrevs.has("ESV")) {
+  // Always surface ESV so it appears in the dropdown.
+  // The actual lookup will fail gracefully if ESV_API_KEY is not set.
+  if (!existingAbbrevs.has("ESV")) {
     toAdd.push(ESV_TRANSLATION);
   }
 

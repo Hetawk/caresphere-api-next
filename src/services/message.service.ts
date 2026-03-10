@@ -331,6 +331,31 @@ export async function sendMessage(id: string) {
   });
 }
 
+/**
+ * Process all messages with status SCHEDULED whose scheduledFor time has passed.
+ * Called by the /api/messages/dispatch cron route every minute.
+ * Returns the number of messages dispatched.
+ */
+export async function sendScheduledMessages(): Promise<number> {
+  const now = new Date();
+  const due = await prisma.message.findMany({
+    where: {
+      status: MessageStatus.SCHEDULED,
+      scheduledFor: { lte: now },
+    },
+    select: { id: true },
+  });
+
+  if (due.length === 0) return 0;
+
+  await prisma.message.updateMany({
+    where: { id: { in: due.map((m) => m.id) } },
+    data: { status: MessageStatus.SENT, sentAt: now },
+  });
+
+  return due.length;
+}
+
 export async function getMessageAnalytics(id: string) {
   const msg = await getMessage(id);
   return {
