@@ -65,7 +65,19 @@ export async function getMessage(id: string) {
     include: {
       template: true,
       senderProfile: true,
-      recipients: true,
+      recipients: {
+        include: {
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
+        },
+      } as Prisma.Message$recipientsArgs,
     },
   });
   if (!msg) throw new NotFoundError("Message");

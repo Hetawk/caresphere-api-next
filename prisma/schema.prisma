@@ -298,6 +298,7 @@ model Member {
   creator     User?            @relation("MemberCreator", fields: [createdBy], references: [id])
   memberNotes MemberNote[]
   activities  MemberActivity[]
+  recipients  MessageRecipient[]
 
   @@index([organizationId])
   @@index([email])
@@ -425,8 +426,10 @@ model MessageRecipient {
   updatedAt      DateTime        @updatedAt @map("updated_at")
 
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  member  Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
   @@index([messageId])
+  @@index([memberId])
   @@map("message_recipients")
 }
 
