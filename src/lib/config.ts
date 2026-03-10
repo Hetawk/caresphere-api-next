@@ -38,7 +38,9 @@ export const config = {
   // when running a traditional long-lived Node server.
   DATABASE_URL: required("DATABASE_URL"),
   DATABASE_POOL_MAX: optionalInt("DATABASE_POOL_MAX", 1),
-  DATABASE_POOL_IDLE_MS: optionalInt("DATABASE_POOL_IDLE_MS", 5000),
+  // Keep idle timeout short: in serverless a worker that finishes a request
+  // should release its connection within ~1s so the next worker can use it.
+  DATABASE_POOL_IDLE_MS: optionalInt("DATABASE_POOL_IDLE_MS", 1000),
   DATABASE_POOL_CONN_TIMEOUT_MS: optionalInt(
     "DATABASE_POOL_CONN_TIMEOUT_MS",
     5000,

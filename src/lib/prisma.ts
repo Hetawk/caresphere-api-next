@@ -14,7 +14,10 @@ function createPrismaClient() {
       max: config.DATABASE_POOL_MAX,
       idleTimeoutMillis: config.DATABASE_POOL_IDLE_MS,
       connectionTimeoutMillis: config.DATABASE_POOL_CONN_TIMEOUT_MS,
-      allowExitOnIdle: false,
+      // CRITICAL for serverless: release connections as soon as the worker goes
+      // idle between requests.  Without this, every warm Vercel worker holds a
+      // connection open permanently, quickly exhausting Postgres max_connections.
+      allowExitOnIdle: true,
     },
     {
       onPoolError: (err) => {
