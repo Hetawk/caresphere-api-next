@@ -5,9 +5,26 @@
 
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { config } from "@/lib/config";
 
 function createPrismaClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+  const adapter = new PrismaPg(
+    {
+      connectionString: config.DATABASE_URL,
+      max: config.DATABASE_POOL_MAX,
+      idleTimeoutMillis: config.DATABASE_POOL_IDLE_MS,
+      connectionTimeoutMillis: config.DATABASE_POOL_CONN_TIMEOUT_MS,
+      allowExitOnIdle: false,
+    },
+    {
+      onPoolError: (err) => {
+        console.error("Prisma PG pool error", err);
+      },
+      onConnectionError: (err) => {
+        console.error("Prisma PG connection error", err);
+      },
+    },
+  );
   return new PrismaClient({
     adapter,
     log:
@@ -21,6 +38,4 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;

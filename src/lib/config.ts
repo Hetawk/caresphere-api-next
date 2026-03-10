@@ -33,6 +33,12 @@ export const config = {
 
   // Database
   DATABASE_URL: required("DATABASE_URL"),
+  DATABASE_POOL_MAX: optionalInt("DATABASE_POOL_MAX", 3),
+  DATABASE_POOL_IDLE_MS: optionalInt("DATABASE_POOL_IDLE_MS", 10000),
+  DATABASE_POOL_CONN_TIMEOUT_MS: optionalInt(
+    "DATABASE_POOL_CONN_TIMEOUT_MS",
+    5000,
+  ),
 
   // Security / JWT
   JWT_SECRET: required("JWT_SECRET"),
