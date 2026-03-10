@@ -16,6 +16,7 @@
  * Note:
  *  Bible/version availability depends on your app key permissions.
  *  Example from current project key: 3034 (BSB) is accessible, 1 (KJV) is not.
+ *  The default translation is configured via BIBLE_DEFAULT_TRANSLATION (defaults to 3034/BSB).
  *
  * Reference formats accepted:
  *   "GEN.1.1"         → Genesis 1:1
@@ -223,12 +224,12 @@ async function yvFetch<T>(
 // ─── Default translation helper ───────────────────────────────────────────────
 
 function defaultTranslation(): string {
-  return config.BIBLE_DEFAULT_TRANSLATION || "1"; // 1 = KJV
+  return config.BIBLE_DEFAULT_TRANSLATION || "3034"; // 3034 = BSB (open-license, always accessible)
 }
 
 function fallbackTranslationId(requestedId: string): string | null {
-  // Keep KJV as default preference, but allow graceful fallback when the app key
-  // does not have permission for KJV.
+  // If a caller explicitly requested KJV (1) but the app key doesn't permit it,
+  // fall back silently to BSB (3034).
   if (requestedId === "1") return "3034";
   return null;
 }
@@ -250,26 +251,44 @@ function toVerse(
 
 /**
  * List all available Bible translations/versions.
+ * Fetches every page from YouVersion so no version is missed.
  * Cached for 30 days (translations rarely change).
+ *
+ * Cache-key includes "v2" so any client that stored the old single-page
+ * result will automatically get a fresh full-list on the next request.
  */
 export async function getTranslations(
   languageTag?: string,
 ): Promise<YouVersionVersion[]> {
-  const cacheKey = `translations:${languageTag ?? "all"}`;
+  const cacheKey = `translations:v2:${languageTag ?? "all"}`;
   return cachedFetch(
     cacheKey,
     "translations",
     config.BIBLE_CACHE_TTL_TRANSLATIONS,
     async () => {
-      const params: Record<string, string | string[]> = {
-        "language_ranges[]": languageTag ? [languageTag] : ["en"],
-        page_size: "100",
-      };
-      const data = await yvFetch<{ data?: YouVersionVersion[] }>(
-        "/bibles",
-        params,
-      );
-      return data.data ?? [];
+      const PAGE_SIZE = 100;
+      const all: YouVersionVersion[] = [];
+      let page = 1;
+
+      while (true) {
+        const params: Record<string, string | string[]> = {
+          "language_ranges[]": languageTag ? [languageTag] : ["en"],
+          page_size: String(PAGE_SIZE),
+          page: String(page),
+        };
+        const data = await yvFetch<{ data?: YouVersionVersion[] }>(
+          "/bibles",
+          params,
+        );
+        const items = data.data ?? [];
+        all.push(...items);
+        // If the page returned fewer items than the page size we've reached
+        // the last page — stop paginating.
+        if (items.length < PAGE_SIZE) break;
+        page++;
+      }
+
+      return all;
     },
   );
 }

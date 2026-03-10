@@ -32,9 +32,13 @@ export const config = {
   NODE_ENV: optional("NODE_ENV", "development"),
 
   // Database
+  // In serverless (Vercel) each worker process creates its own pg pool.
+  // Keep the per-worker pool small (default 1) to avoid exhausting the
+  // PostgreSQL max-connections limit.  Raise via DATABASE_POOL_MAX env var
+  // when running a traditional long-lived Node server.
   DATABASE_URL: required("DATABASE_URL"),
-  DATABASE_POOL_MAX: optionalInt("DATABASE_POOL_MAX", 3),
-  DATABASE_POOL_IDLE_MS: optionalInt("DATABASE_POOL_IDLE_MS", 10000),
+  DATABASE_POOL_MAX: optionalInt("DATABASE_POOL_MAX", 1),
+  DATABASE_POOL_IDLE_MS: optionalInt("DATABASE_POOL_IDLE_MS", 5000),
   DATABASE_POOL_CONN_TIMEOUT_MS: optionalInt(
     "DATABASE_POOL_CONN_TIMEOUT_MS",
     5000,
@@ -97,8 +101,10 @@ export const config = {
     "YOUVERSION_API_URL",
     "https://api.youversion.com/v1",
   ),
-  // Default translation preference (KJV = 1).
-  BIBLE_DEFAULT_TRANSLATION: optional("BIBLE_DEFAULT_TRANSLATION", "1"),
+  // Default translation preference.
+  // KJV (1) is often not accessible via the current app key; BSB (3034) is the
+  // reliable open-license fallback.  Override via BIBLE_DEFAULT_TRANSLATION env var.
+  BIBLE_DEFAULT_TRANSLATION: optional("BIBLE_DEFAULT_TRANSLATION", "3034"),
   // Cache TTLs (seconds)
   BIBLE_CACHE_TTL_VERSE: optionalInt("BIBLE_CACHE_TTL_VERSE", 604800), // 7 days
   BIBLE_CACHE_TTL_TRANSLATIONS: optionalInt(
